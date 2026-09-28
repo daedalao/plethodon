@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.archpower.plethodon</id>
+  <launchable type="desktop-id">plethodon.desktop</launchable>
+  <provides>
+    <binary>plethodon</binary>
+  </provides>
+  <name>SiskiyouPlethodon</name>
+  <developer id="io.github.daedalao">
+    <name>daedalao</name>
+    <url>https://github.com/daedalao/plethodon</url>
+  </developer>
+  <summary>Web browser for PowerPC, built from Mozilla Firefox source code</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+  <description>
+    <p>
+      SiskiyouPlethodon is an independent build of the Gecko engine for
+      32-bit PowerPC (PowerBook G4 and other G4 Macs) on Arch POWER, with a
+      ppc32 JavaScript JIT and big-endian rendering fixes. It is built from
+      Mozilla Firefox source code and is not affiliated with or endorsed by
+      Mozilla.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/daedalao/plethodon</url>
+  <url type="bugtracker">https://github.com/daedalao/plethodon/issues</url>
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>

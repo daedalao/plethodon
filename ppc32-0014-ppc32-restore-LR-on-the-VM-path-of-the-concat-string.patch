@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 19:06:09 -0700
+Subject: [PATCH 14/19] ppc32: restore LR on the VM path of the concat-strings
+ IC
+
+---
+ js/src/jit/CacheIRCompiler.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/js/src/jit/CacheIRCompiler.cpp b/js/src/jit/CacheIRCompiler.cpp
+index e00a4ceed9..7499adf5cb 100644
+--- a/js/src/jit/CacheIRCompiler.cpp
++++ b/js/src/jit/CacheIRCompiler.cpp
+@@ -10437,7 +10437,7 @@ bool CacheIRCompiler::emitConcatStringsResult(StringOperandId lhsId,
+     masm.bind(&vmCall);
+     masm.setFramePushed(framePushed);
+     masm.PopRegsInMask(liveRegs);
+-#ifdef JS_CODEGEN_PPC64
++#if defined(JS_CODEGEN_PPC64) || defined(JS_CODEGEN_PPC)
+     masm.pop(r0);
+     masm.xs_mtlr(r0);
+ #endif

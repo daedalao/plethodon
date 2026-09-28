@@ -1,0 +1,163 @@
+From: daedalao <daedalao@hotmail.com>
+Subject: [PATCH] SiskiyouPlethodon: profile dir and de-Firefoxed UI strings
+
+The branding directory itself (browser/branding/plethodon) ships as
+plethodon-branding.tar.gz; this patch holds the text changes:
+MOZ_APP_PROFILE=plethodon, Firefox-named built-in features renamed to
+Plethodon, error pages and default bookmarks say Plethodon. Mozilla
+services (Relay, Monitor, Profiler, ...) keep their names.
+---
+diff --git a/browser/locales/en-US/browser/profile/default-bookmarks.ftl b/browser/locales/en-US/browser/profile/default-bookmarks.ftl
+index 5523466f30..cca37e7579 100644
+--- a/browser/locales/en-US/browser/profile/default-bookmarks.ftl
++++ b/browser/locales/en-US/browser/profile/default-bookmarks.ftl
+@@ -10,13 +10,13 @@ default-bookmarks-title = Bookmarks
+ default-bookmarks-heading = Bookmarks
+ 
+ # Firefox links folder name
+-default-bookmarks-firefox-heading = Mozilla Firefox
++default-bookmarks-firefox-heading = Plethodon
+ 
+ # link title for https://www.mozilla.org/firefox/help/
+ default-bookmarks-firefox-get-help = Get Help
+ 
+ # link title for https://www.mozilla.org/firefox/customize/
+-default-bookmarks-firefox-customize = Customize Firefox
++default-bookmarks-firefox-customize = Customize Plethodon
+ 
+ # link title for https://www.mozilla.org/contribute/
+ default-bookmarks-firefox-community = Get Involved
+diff --git a/browser/locales/en-US/chrome/overrides/appstrings.properties b/browser/locales/en-US/chrome/overrides/appstrings.properties
+index 13464a72e8..095541bb97 100644
+--- a/browser/locales/en-US/chrome/overrides/appstrings.properties
++++ b/browser/locales/en-US/chrome/overrides/appstrings.properties
+@@ -3,29 +3,29 @@
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ malformedURI2=Please check that the URL is correct and try again.
+-fileNotFound=Firefox can’t find the file at %S.
++fileNotFound=Plethodon can’t find the file at %S.
+ fileAccessDenied=The file at %S is not readable.
+ # %S is replaced by the uri host
+ httpErrorPage=%S sent back an error.
+ serverError=%S might have a temporary problem or it could have moved.
+ dnsNotFound2=We can’t connect to the server at %S.
+ basicHttpAuthDisabled=Someone pretending to be the site could try to steal things like your username, password, or email.
+-unknownProtocolFound=Firefox doesn’t know how to open this address, because one of the following protocols (%S) isn’t associated with any program or is not allowed in this context.
+-connectionFailure=Firefox can’t establish a connection to the server at %S.
++unknownProtocolFound=Plethodon doesn’t know how to open this address, because one of the following protocols (%S) isn’t associated with any program or is not allowed in this context.
++connectionFailure=Plethodon can’t establish a connection to the server at %S.
+ netInterrupt=The connection to %S was interrupted while the page was loading.
+ netTimeout=The server at %S is taking too long to respond.
+-redirectLoop=Firefox has detected that the server is redirecting the request for this address in a way that will never complete.
++redirectLoop=Plethodon has detected that the server is redirecting the request for this address in a way that will never complete.
+ ## LOCALIZATION NOTE (confirmRepostPrompt): In this item, don’t translate "%S"
+ confirmRepostPrompt=To display this page, %S must send information that will repeat any action (such as a search or order confirmation) that was performed earlier.
+ resendButton.label=Resend
+-clientSocketMisconfiguration=Firefox doesn’t know how to communicate with the server.
++clientSocketMisconfiguration=Plethodon doesn’t know how to communicate with the server.
+ netReset=The connection to the server was reset while the page was loading.
+ notCached=This document is no longer available.
+-netOffline=Firefox is currently in offline mode and can’t browse the Web.
++netOffline=Plethodon is currently in offline mode and can’t browse the Web.
+ isprinting=The document cannot change while Printing or in Print Preview.
+-deniedPortAccess=This address uses a network port which is normally used for purposes other than Web browsing. Firefox has canceled the request for your protection.
+-proxyResolveFailure=Firefox is configured to use a proxy server that can’t be found.
+-proxyConnectFailure=Firefox is configured to use a proxy server that is refusing connections.
++deniedPortAccess=This address uses a network port which is normally used for purposes other than Web browsing. Plethodon has canceled the request for your protection.
++proxyResolveFailure=Plethodon is configured to use a proxy server that can’t be found.
++proxyConnectFailure=Plethodon is configured to use a proxy server that is refusing connections.
+ contentEncodingError=The page you are trying to view cannot be shown because it uses an invalid or unsupported form of compression.
+ unsafeContentType=The page you are trying to view cannot be shown because it is contained in a file type that may not be safe to open. Please contact the website owners to inform them of this problem.
+ externalProtocolTitle=External Protocol Request
+@@ -43,9 +43,9 @@ cspBlocked=This page has a content security policy that prevents it from being l
+ xfoBlocked=This page has an X-Frame-Options policy that prevents it from being loaded in this context.
+ corruptedContentErrorv2=The site at %S has experienced a network protocol violation that cannot be repaired.
+ ## LOCALIZATION NOTE (sslv3Used) - Do not translate "%S".
+-sslv3Used=Firefox cannot guarantee the safety of your data on %S because it uses SSLv3, a broken security protocol.
++sslv3Used=Plethodon cannot guarantee the safety of your data on %S because it uses SSLv3, a broken security protocol.
+ inadequateSecurityError=The website tried to negotiate an inadequate level of security.
+ blockedByPolicy=Your organization has blocked access to this page or website.
+-blockedByCORP=Firefox didn’t load this page because it looks like the security configuration doesn’t match the previous page.
++blockedByCORP=Plethodon didn’t load this page because it looks like the security configuration doesn’t match the previous page.
+ invalidHeaderValue=%S sent back a header with empty characters not allowed by web security standards.
+-networkProtocolError=Firefox has experienced a network protocol violation that cannot be repaired.
++networkProtocolError=Plethodon has experienced a network protocol violation that cannot be repaired.
+diff --git a/browser/moz.configure b/browser/moz.configure
+index 3ea3d88b93..f8f0353d6e 100644
+--- a/browser/moz.configure
++++ b/browser/moz.configure
+@@ -13,6 +13,8 @@ imply_option("MOZ_PROFILE_MIGRATOR", True)
+ 
+ imply_option("MOZ_APP_VENDOR", "Mozilla")
+ imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
++# SiskiyouPlethodon: own profile directory (~/.plethodon), never a Firefox one.
++imply_option("MOZ_APP_PROFILE", "plethodon")
+ # Include the DevTools client, not just the server (which is the default)
+ imply_option("MOZ_DEVTOOLS", "all")
+ imply_option("BROWSER_CHROME_URL", "chrome://browser/content/browser.xhtml")
+diff --git a/toolkit/locales/en-US/toolkit/about/aboutAddons.ftl b/toolkit/locales/en-US/toolkit/about/aboutAddons.ftl
+index acd6e92b39..c2515bdacc 100644
+--- a/toolkit/locales/en-US/toolkit/about/aboutAddons.ftl
++++ b/toolkit/locales/en-US/toolkit/about/aboutAddons.ftl
+@@ -328,7 +328,7 @@ discopane-intro3 =
+     Extensions and themes let you customize { -brand-product-name }. They can boost privacy,
+     enhance productivity, improve media, change the way { -brand-product-name } looks, and
+     so much more. These small software programs are often developed by a third party. Here’s
+-    a selection Firefox <a data-l10n-name="learn-more-trigger">recommends</a> for
++    a selection Mozilla <a data-l10n-name="learn-more-trigger">recommends</a> for
+     exceptional security, performance, and functionality.
+ 
+ # Notice to make user aware that the recommendations are personalized.
+@@ -497,7 +497,7 @@ addon-detail-group-label-quarantined-domains =
+ # recommendation. As such, we hard code "Firefox" and avoid personalising
+ # language like the words "our" or "we".
+ addon-badge-recommended4 =
+-  .title = Firefox only recommends extensions that meet standards for security and performance
++  .title = Mozilla only recommends extensions that meet standards for security and performance
+ # We hard code "Mozilla" in the string below because the extensions are built
+ # by Mozilla and we don't want forks to display "by Fork".
+ addon-badge-line4 =
+diff --git a/toolkit/locales/en-US/toolkit/branding/brandings.ftl b/toolkit/locales/en-US/toolkit/branding/brandings.ftl
+index 4562485f07..96beeedd96 100644
+--- a/toolkit/locales/en-US/toolkit/branding/brandings.ftl
++++ b/toolkit/locales/en-US/toolkit/branding/brandings.ftl
+@@ -20,10 +20,10 @@
+ -mozmonitor-brand-name = Mozilla Monitor
+ -pocket-brand-name = Pocket
+ -send-brand-name = Firefox Send
+--screenshots-brand-name = Firefox Screenshots
++-screenshots-brand-name = Plethodon Screenshots
+ -mozilla-vpn-brand-name = Mozilla VPN
+ -profiler-brand-name = Firefox Profiler
+--translations-brand-name = Firefox Translations
++-translations-brand-name = Plethodon Translations
+ -focus-brand-name = Firefox Focus
+ -relay-brand-name = Firefox Relay
+ -relay-brand-short-name = Relay
+@@ -44,21 +44,21 @@
+ 
+ # “Suggest” can be localized, “Firefox” must be treated as a brand
+ # and kept in English.
+--firefox-suggest-brand-name = Firefox Suggest
++-firefox-suggest-brand-name = Plethodon Suggest
+ 
+ # ”Home" can be localized, “Firefox” must be treated as a brand
+ # and kept in English.
+--firefox-home-brand-name = Firefox Home
++-firefox-home-brand-name = Plethodon Home
+ 
+ # View" can be localized, “Firefox” must be treated as a brand
+ # and kept in English.
+--firefoxview-brand-name = Firefox View
++-firefoxview-brand-name = Plethodon View
+ 
+ # Firefox Labs is the name for a page in Settings to allow users to learn about
+ # experimental and in-development features, and turn those features on and off.
+ # The "Labs" portion can be localized, “Firefox” must be treated as a brand
+ # and kept in English.
+--firefoxlabs-brand-name = Firefox Labs
++-firefoxlabs-brand-name = Plethodon Labs
+ 
+ -smart-window-brand-name =
+     { $plural-form ->

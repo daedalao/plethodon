@@ -1,0 +1,30 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Exec=/usr/lib/plethodon/plethodon %u
+Terminal=false
+X-MultipleArgs=false
+Icon=plethodon
+StartupWMClass=plethodon
+DBusActivatable=false
+Categories=GNOME;GTK;Network;WebBrowser;
+MimeType=application/json;application/pdf;application/rdf+xml;application/rss+xml;application/x-xpinstall;application/xhtml+xml;application/xml;audio/flac;audio/ogg;audio/webm;image/avif;image/gif;image/jpeg;image/png;image/svg+xml;image/webp;text/html;text/xml;video/ogg;video/webm;x-scheme-handler/chrome;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/mailto;
+StartupNotify=true
+Actions=new-window;new-private-window;open-profile-manager;
+Name=SiskiyouPlethodon
+GenericName=Web Browser
+Comment=Web browser for PowerPC, built from Mozilla Firefox source code
+Keywords=Internet;WWW;Browser;Web;Explorer;Plethodon;
+X-GNOME-FullName=SiskiyouPlethodon Web Browser
+
+[Desktop Action new-window]
+Exec=/usr/lib/plethodon/plethodon --new-window %u
+Name=New Window
+
+[Desktop Action new-private-window]
+Exec=/usr/lib/plethodon/plethodon --private-window %u
+Name=New Private Window
+
+[Desktop Action open-profile-manager]
+Exec=/usr/lib/plethodon/plethodon --ProfileManager
+Name=Open Profile Manager

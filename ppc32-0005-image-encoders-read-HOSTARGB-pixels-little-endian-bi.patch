@@ -1,0 +1,121 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 14:35:08 -0700
+Subject: [PATCH 05/19] image encoders: read HOSTARGB pixels little-endian
+ (big-endian canvas toDataURL)
+
+---
+ image/encoders/bmp/nsBMPEncoder.cpp   | 10 +++++++---
+ image/encoders/jpeg/nsJPEGEncoder.cpp |  5 ++++-
+ image/encoders/png/nsPNGEncoder.cpp   |  5 ++++-
+ image/encoders/webp/nsWebPEncoder.cpp |  6 ++++--
+ 4 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/image/encoders/bmp/nsBMPEncoder.cpp b/image/encoders/bmp/nsBMPEncoder.cpp
+index 23308ec442..12a0de12ea 100644
+--- a/image/encoders/bmp/nsBMPEncoder.cpp
++++ b/image/encoders/bmp/nsBMPEncoder.cpp
+@@ -3,10 +3,10 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsBMPEncoder.h"
++#include "mozilla/EndianUtils.h"
+ 
+ #include "BMPHeaders.h"
+ #include "mozilla/CheckedInt.h"
+-#include "mozilla/EndianUtils.h"
+ #include "mozilla/UniquePtrExtensions.h"
+ #include "nsCRT.h"
+ #include "nsStreamUtils.h"
+@@ -430,7 +430,9 @@ void nsBMPEncoder::ConvertHostARGBRow(const uint8_t* aSrc,
+ 
+   if (mBMPInfoHeader.bpp == 32) {
+     for (uint32_t x = 0; x < aPixelWidth; x++) {
+-      const uint32_t& pixelIn = ((const uint32_t*)(aSrc))[x];
++      // HOSTARGB is the B8G8R8A8 byte layout (0xAARRGGBB read little-endian),
++      // also on big-endian.
++      const uint32_t pixelIn = mozilla::LittleEndian::readUint32(aSrc + 4 * x);
+       uint8_t* pixelOut = &aDest[x * bytes];
+ 
+       pixelOut[0] = (pixelIn & 0x00ff0000) >> 16;
+@@ -440,7 +442,9 @@ void nsBMPEncoder::ConvertHostARGBRow(const uint8_t* aSrc,
+     }
+   } else {
+     for (uint32_t x = 0; x < aPixelWidth; x++) {
+-      const uint32_t& pixelIn = ((const uint32_t*)(aSrc))[x];
++      // HOSTARGB is the B8G8R8A8 byte layout (0xAARRGGBB read little-endian),
++      // also on big-endian.
++      const uint32_t pixelIn = mozilla::LittleEndian::readUint32(aSrc + 4 * x);
+       uint8_t* pixelOut = &aDest[x * bytes];
+ 
+       pixelOut[0] = (pixelIn & 0xff0000) >> 16;
+diff --git a/image/encoders/jpeg/nsJPEGEncoder.cpp b/image/encoders/jpeg/nsJPEGEncoder.cpp
+index 646b032b56..edac44f939 100644
+--- a/image/encoders/jpeg/nsJPEGEncoder.cpp
++++ b/image/encoders/jpeg/nsJPEGEncoder.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsJPEGEncoder.h"
++#include "mozilla/EndianUtils.h"
+ 
+ #include "gfxColor.h"
+ #include "mozilla/CheckedInt.h"
+@@ -387,7 +388,9 @@ nsJPEGEncoder::CloseWithStatus(nsresult aStatus) { return Close(); }
+ void nsJPEGEncoder::ConvertHostARGBRow(const uint8_t* aSrc, uint8_t* aDest,
+                                        uint32_t aPixelWidth) {
+   for (uint32_t x = 0; x < aPixelWidth; x++) {
+-    const uint32_t& pixelIn = ((const uint32_t*)(aSrc))[x];
++    // HOSTARGB is the B8G8R8A8 byte layout (0xAARRGGBB read little-endian),
++    // also on big-endian.
++    const uint32_t pixelIn = mozilla::LittleEndian::readUint32(aSrc + 4 * x);
+     uint8_t* pixelOut = &aDest[x * 3];
+ 
+     pixelOut[0] = (pixelIn & 0xff0000) >> 16;
+diff --git a/image/encoders/png/nsPNGEncoder.cpp b/image/encoders/png/nsPNGEncoder.cpp
+index 66786d1701..cb1168844c 100644
+--- a/image/encoders/png/nsPNGEncoder.cpp
++++ b/image/encoders/png/nsPNGEncoder.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsPNGEncoder.h"
++#include "mozilla/EndianUtils.h"
+ 
+ #include <bit>
+ #include <cstring>
+@@ -927,7 +928,9 @@ void nsPNGEncoder::ConvertHostARGBRow(const uint8_t* aSrc, uint8_t* aDest,
+                                       bool aUseTransparency) {
+   uint32_t pixelStride = aUseTransparency ? 4 : 3;
+   for (uint32_t x = 0; x < aPixelWidth; x++) {
+-    const uint32_t& pixelIn = ((const uint32_t*)(aSrc))[x];
++    // HOSTARGB is the B8G8R8A8 byte layout (0xAARRGGBB read little-endian),
++    // also on big-endian.
++    const uint32_t pixelIn = mozilla::LittleEndian::readUint32(aSrc + 4 * x);
+     uint8_t* pixelOut = &aDest[x * pixelStride];
+ 
+     uint8_t alpha = (pixelIn & 0xff000000) >> 24;
+diff --git a/image/encoders/webp/nsWebPEncoder.cpp b/image/encoders/webp/nsWebPEncoder.cpp
+index bc21857ae9..00d5ddf8ce 100644
+--- a/image/encoders/webp/nsWebPEncoder.cpp
++++ b/image/encoders/webp/nsWebPEncoder.cpp
+@@ -4,6 +4,7 @@
+ 
+ // #include "ImageLogging.h"
+ #include "nsWebPEncoder.h"
++#include "mozilla/EndianUtils.h"
+ 
+ #include "mozilla/CheckedInt.h"
+ #include "mozilla/UniquePtrExtensions.h"
+@@ -141,8 +142,9 @@ nsWebPEncoder::InitFromData(const uint8_t* aData,
+ 
+     for (uint32_t y = 0; y < aHeight; y++) {
+       for (uint32_t x = 0; x < aWidth; x++) {
+-        const uint32_t& pixelIn =
+-            ((const uint32_t*)(aData))[y * aStride / 4 + x];
++        // HOSTARGB is the B8G8R8A8 byte layout, also on big-endian.
++        const uint32_t pixelIn =
++            mozilla::LittleEndian::readUint32(aData + y * aStride + 4 * x);
+         uint8_t* pixelOut = &aDest[y * aStride + x * 4];
+ 
+         uint8_t alpha = (pixelIn & 0xff000000) >> 24;

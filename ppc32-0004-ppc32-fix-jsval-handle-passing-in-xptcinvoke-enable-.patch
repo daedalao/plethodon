@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 14:24:05 -0700
+Subject: [PATCH 04/19] ppc32: fix jsval handle passing in xptcinvoke; enable
+ PBL by default without JIT
+
+---
+ js/src/jit/JitOptions.cpp                       |  7 ++++++-
+ .../xptcall/md/unix/xptcinvoke_ppc_linux.cpp    | 17 ++++++++++++++---
+ 2 files changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/js/src/jit/JitOptions.cpp b/js/src/jit/JitOptions.cpp
+index e8c28d983e..83575e0200 100644
+--- a/js/src/jit/JitOptions.cpp
++++ b/js/src/jit/JitOptions.cpp
+@@ -138,8 +138,13 @@ DefaultJitOptions::DefaultJitOptions() {
+   SET_DEFAULT(disableCanonicalizeNaNAtUses, true);
+ 
+ #ifdef ENABLE_PORTABLE_BASELINE_INTERP
+-  // Whether the Portable Baseline Interpreter is enabled.
++  // Whether the Portable Baseline Interpreter is enabled. On by default when
++  // there is no JIT backend (ppc32): it is the fastest tier available.
++#  ifdef JS_CODEGEN_NONE
++  SET_DEFAULT(portableBaselineInterpreter, true);
++#  else
+   SET_DEFAULT(portableBaselineInterpreter, false);
++#  endif
+ #endif
+ 
+ #ifdef ENABLE_PORTABLE_BASELINE_INTERP_FORCE
+diff --git a/xpcom/reflect/xptcall/md/unix/xptcinvoke_ppc_linux.cpp b/xpcom/reflect/xptcall/md/unix/xptcinvoke_ppc_linux.cpp
+index 911dc68522..f1d776aeb1 100644
+--- a/xpcom/reflect/xptcall/md/unix/xptcinvoke_ppc_linux.cpp
++++ b/xpcom/reflect/xptcall/md/unix/xptcinvoke_ppc_linux.cpp
+@@ -45,10 +45,21 @@ invoke_copy_to_stack(uint32_t* d,
+ 
+     for(uint32_t i = 0; i < paramCount; i++, s++) {
+         if(s->IsIndirect()) {
+-            if(s->type == nsXPTType::T_JSVAL)
+-                tempu32 = (uint32_t) &s->val.p;
++            if(s->type == nsXPTType::T_JSVAL) {
++                // jsval params are JS::Handle<JS::Value> /
++                // JS::MutableHandle<JS::Value>: structs, which the SysV
++                // PPC32 ABI passes by reference.  Pass a pointer to a word
++                // holding the handle (&jsval); the spare word after the
++                // jsval in the variant's storage lives as long as the call.
++                static_assert(sizeof(s->ext) >= sizeof(JS::Value) + sizeof(void*),
++                              "no room for the handle after the jsval");
++                void** handle = reinterpret_cast<void**>(
++                    reinterpret_cast<char*>(&s->ext) + sizeof(JS::Value));
++                *handle = &s->ext.jsval;
++                tempu32 = (uint32_t) handle;
++            }
+             else
+-                tempu32 = (uint32_t) &s->val.p;
++                tempu32 = (uint32_t) &s->val;
+         }
+         else {
+             switch(s->type) {

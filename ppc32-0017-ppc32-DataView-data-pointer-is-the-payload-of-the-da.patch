@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 20:39:41 -0700
+Subject: [PATCH 17/19] ppc32: DataView data pointer is the payload of the data
+ slot
+
+---
+ js/src/jit/CacheIRCompiler.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/js/src/jit/CacheIRCompiler.cpp b/js/src/jit/CacheIRCompiler.cpp
+index 7499adf5cb..4a0ed3e5ae 100644
+--- a/js/src/jit/CacheIRCompiler.cpp
++++ b/js/src/jit/CacheIRCompiler.cpp
+@@ -8000,7 +8000,7 @@ bool CacheIRCompiler::emitLoadDataViewValueResult(
+   emitDataViewBoundsCheck(viewKind, byteSize, obj, offset, outputScratch,
+                           scratch2, failure->label());
+ 
+-  masm.loadPtr(Address(obj, DataViewObject::dataOffset()), outputScratch);
++  masm.loadPtr(ValuePayloadAddress(Address(obj, DataViewObject::dataOffset())), outputScratch);
+ 
+   // Load the value.
+   BaseIndex source(outputScratch, offset, TimesOne);
+@@ -8247,7 +8247,7 @@ bool CacheIRCompiler::emitStoreDataViewValueResult(
+   emitDataViewBoundsCheck(viewKind, byteSize, obj, offset, scratch1,
+                           boundsCheckScratch, failure->label());
+ 
+-  masm.loadPtr(Address(obj, DataViewObject::dataOffset()), scratch1);
++  masm.loadPtr(ValuePayloadAddress(Address(obj, DataViewObject::dataOffset())), scratch1);
+   BaseIndex dest(scratch1, offset, TimesOne);
+ 
+   if (byteSize == 1) {

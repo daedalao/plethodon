@@ -1,0 +1,564 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 17:54:56 -0700
+Subject: [PATCH 10/19] ppc32: pass class-type arguments by reference at the
+ JIT->C++ boundary (VM wrapper cells, raw-arg ABI thunks, DOM handle cells);
+ compile-time check
+
+---
+ js/src/jit/ABIFunctionList-inl.h  | 42 +++++++++++++++
+ js/src/jit/CacheIRCompiler.cpp    | 27 +++++++++-
+ js/src/jit/CodeGenerator.cpp      | 50 +++++++++++++++++-
+ js/src/jit/IonCacheIRCompiler.cpp |  7 +++
+ js/src/jit/JitFrames.h            |  3 +-
+ js/src/jit/MacroAssembler-inl.h   |  2 +
+ js/src/jit/VMFunctions.cpp        | 50 +++++++++++++++++-
+ js/src/jit/VMFunctions.h          | 22 ++++++++
+ js/src/jit/ppc/Trampoline-ppc.cpp | 85 +++++++++++++++++++++++++++++--
+ 9 files changed, 280 insertions(+), 8 deletions(-)
+
+diff --git a/js/src/jit/ABIFunctionList-inl.h b/js/src/jit/ABIFunctionList-inl.h
+index 0bcd7bb001..174fdb1b3f 100644
+--- a/js/src/jit/ABIFunctionList-inl.h
++++ b/js/src/jit/ABIFunctionList-inl.h
+@@ -170,6 +170,12 @@ namespace jit {
+   _(js::jit::LazyLinkTopActivation)                                            \
+   _(js::jit::LinearizeForCharAccessPure)                                       \
+   _(js::jit::ObjectHasGetterSetterPure)                                        \
++  _(js::jit::ObjectHasGetterSetterPureRawId)                                   \
++  _(js::jit::GetNativeDataPropertyPureRawId)                                   \
++  _(js::jit::GetNativeDataPropertyPureWithCacheLookupRawId)                    \
++  _(js::jit::TypeOfEqObjectRaw)                                                \
++  _(js::jit::AssertPropertyLookupRawId)                                        \
++  _(js::jit::ProxyGetPropertyRaw)                                              \
+   _(js::jit::ObjectIsCallable)                                                 \
+   _(js::jit::ObjectIsConstructor)                                              \
+   _(js::jit::PostGlobalWriteBarrier)                                           \
+@@ -254,6 +260,42 @@ namespace jit {
+ #  pragma GCC diagnostic ignored "-Wignored-attributes"
+ #endif
+ 
++#ifdef JS_CODEGEN_PPC
++// The SysV PPC32 ABI passes and returns every class type by reference (even
++// one-pointer classes like JS::Handle), while JIT code passes such values in
++// registers like on other platforms. List the signatures that need care.
++template <typename Sig>
++struct PPC32ClassFreeSignature {
++  static constexpr bool value = true;
++};
++template <typename R, typename... Args>
++struct PPC32ClassFreeSignature<R (*)(Args...)> {
++  static constexpr bool value =
++      !std::is_class_v<R> && !(std::is_class_v<Args> || ...);
++};
++// The DOM ops take JS::Handle and JSJit*CallArgs by value; their JIT call
++// sites (CodeGenerator visit{Get,Set}DOMProperty, visitCallDOMNative) pass
++// the addresses of stack cells holding them instead.
++template <>
++struct PPC32ClassFreeSignature<JSJitGetterOp> {
++  static constexpr bool value = true;
++};
++template <>
++struct PPC32ClassFreeSignature<JSJitSetterOp> {
++  static constexpr bool value = true;
++};
++template <>
++struct PPC32ClassFreeSignature<JSJitMethodOp> {
++  static constexpr bool value = true;
++};
++#  define PPC32_CHECK_SIG(...)                                  \
++    static_assert(PPC32ClassFreeSignature<__VA_ARGS__>::value, \
++                  "ppc32: ABI call with a class-type argument/result "  \
++                  "(passed by reference in SysV); use a raw variant");
++#else
++#  define PPC32_CHECK_SIG(...)
++#endif
++
+ #define DEF_TEMPLATE(fp)                      \
+   template <>                                 \
+   struct ABIFunctionData<decltype(&fp), fp> { \
+diff --git a/js/src/jit/CacheIRCompiler.cpp b/js/src/jit/CacheIRCompiler.cpp
+index 82c5aa31f2..1531b626d8 100644
+--- a/js/src/jit/CacheIRCompiler.cpp
++++ b/js/src/jit/CacheIRCompiler.cpp
+@@ -8565,12 +8565,20 @@ bool CacheIRCompiler::emitLoadTypeOfEqObjectResult(ObjOperandId objId,
+     save.takeUnchecked(scratch);
+     masm.PushRegsInMask(save);
+ 
++#ifdef JS_CODEGEN_PPC
++    using Fn = bool (*)(JSObject* obj, uint32_t operand);
++#else
+     using Fn = bool (*)(JSObject* obj, TypeofEqOperand operand);
++#endif
+     masm.setupUnalignedABICall(scratch);
+     masm.passABIArg(obj);
+     masm.move32(Imm32(TypeofEqOperand(type, compareOp).rawValue()), scratch);
+     masm.passABIArg(scratch);
++#ifdef JS_CODEGEN_PPC
++    masm.callWithABI<Fn, TypeOfEqObjectRaw>();
++#else
+     masm.callWithABI<Fn, TypeOfEqObject>();
++#endif
+     masm.storeCallBoolResult(scratch);
+ 
+     masm.PopRegsInMask(save);
+@@ -9832,7 +9840,13 @@ bool CacheIRCompiler::emitMegamorphicLoadSlotResult(ObjOperandId objId,
+   masm.passABIArg(scratch3);
+   masm.passABIArg(idReg);
+ 
+-#ifdef JS_CODEGEN_X86
++#if defined(JS_CODEGEN_PPC)
++  {
++    using FnRaw = bool (*)(JSContext* cx, JSObject* obj, uintptr_t id,
++                           MegamorphicCacheEntry* cacheEntry, Value* vp);
++    masm.callWithABI<FnRaw, GetNativeDataPropertyPureRawId>();
++  }
++#elif defined(JS_CODEGEN_X86)
+   masm.callWithABI<Fn, GetNativeDataPropertyPureWithCacheLookup>();
+ #else
+   masm.callWithABI<Fn, GetNativeDataPropertyPure>();
+@@ -9989,7 +10003,13 @@ bool CacheIRCompiler::emitGuardHasGetterSetter(ObjOperandId objId,
+   emitLoadStubField(id, scratch2);
+   masm.passABIArg(scratch2);
+   masm.passABIArg(scratch3.get().scratchReg());
++#ifdef JS_CODEGEN_PPC
++  using FnRaw = bool (*)(JSContext* cx, JSObject* obj, uintptr_t id,
++                         GetterSetter* getterSetter);
++  masm.callWithABI<FnRaw, ObjectHasGetterSetterPureRawId>();
++#else
+   masm.callWithABI<Fn, ObjectHasGetterSetterPure>();
++#endif
+   masm.storeCallPointerResult(scratch1);
+   masm.PopRegsInMask(volatileRegs);
+ 
+@@ -12058,8 +12078,13 @@ bool CacheIRCompiler::emitAssertPropertyLookup(ObjOperandId objId,
+   masm.passABIArg(obj);
+   masm.passABIArg(id);
+   masm.passABIArg(slot);
++#ifdef JS_CODEGEN_PPC
++  using Fn = void (*)(NativeObject*, uintptr_t, uint32_t);
++  masm.callWithABI<Fn, js::jit::AssertPropertyLookupRawId>();
++#else
+   using Fn = void (*)(NativeObject*, PropertyKey, uint32_t);
+   masm.callWithABI<Fn, js::jit::AssertPropertyLookup>();
++#endif
+   masm.PopRegsInMask(save);
+ 
+   return true;
+diff --git a/js/src/jit/CodeGenerator.cpp b/js/src/jit/CodeGenerator.cpp
+index 065ed5b90a..81682117dd 100644
+--- a/js/src/jit/CodeGenerator.cpp
++++ b/js/src/jit/CodeGenerator.cpp
+@@ -4890,7 +4890,13 @@ void CodeGenerator::visitMegamorphicLoadSlot(LMegamorphicLoadSlot* lir) {
+   masm.passABIArg(temp2);
+   masm.passABIArg(temp3);
+ 
++#ifdef JS_CODEGEN_PPC
++  using FnRaw = bool (*)(JSContext* cx, JSObject* obj, uintptr_t id,
++                         MegamorphicCacheEntry* cacheEntry, Value* vp);
++  masm.callWithABI<FnRaw, GetNativeDataPropertyPureRawId>();
++#else
+   masm.callWithABI<Fn, GetNativeDataPropertyPure>();
++#endif
+ 
+   MOZ_ASSERT(!output.aliases(ReturnReg));
+   masm.Pop(output);
+@@ -6436,7 +6442,8 @@ void CodeGenerator::visitCallDOMNative(LCallDOMNative* call) {
+   // for GC tracing) and as a uint32 (JSJitMethodCallArgs::argc_, by the native).
+   // On big-endian a uint32 read of a word slot sees the high half, so store argc
+   // in the high 32 bits; argc() reads it back shifted.
+-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++#if defined(JS_PUNBOX64) && defined(__BYTE_ORDER__) && \
++    __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+   masm.Push(ImmWord(uintptr_t(call->numActualArgs()) << 32));
+ #else
+   masm.Push(Imm32(call->numActualArgs()));
+@@ -6476,6 +6483,13 @@ void CodeGenerator::visitCallDOMNative(LCallDOMNative* call) {
+   markSafepointAt(safepointOffset, call);
+ 
+   // Construct and execute call.
++#ifdef JS_CODEGEN_PPC
++  // SysV PPC32 passes the JS::Handle<JSObject*> class by reference: pass the
++  // address of a cell holding the handle (the address of |this|).
++  masm.reserveStack(ABIStackAlignment);
++  masm.storePtr(argObj, Address(masm.getStackPointer(), 0));
++  masm.moveStackPtrTo(argObj);
++#endif
+   masm.setupAlignedABICall();
+   masm.loadJSContext(argJSContext);
+   masm.passABIArg(argJSContext);
+@@ -6486,6 +6500,9 @@ void CodeGenerator::visitCallDOMNative(LCallDOMNative* call) {
+   masm.callWithABI(DynamicFunction<JSJitMethodOp>(target->jitInfo()->method),
+                    ABIType::General,
+                    CheckUnsafeCallWithABI::DontCheckHasExitFrame);
++#ifdef JS_CODEGEN_PPC
++  masm.freeStack(ABIStackAlignment);
++#endif
+ 
+   if (target->jitInfo()->isInfallible) {
+     masm.loadValue(Address(masm.getStackPointer(),
+@@ -20278,6 +20295,16 @@ void CodeGenerator::visitGetDOMProperty(LGetDOMProperty* ins) {
+ 
+   markSafepointAt(safepointOffset, ins);
+ 
++#ifdef JS_CODEGEN_PPC
++  // SysV PPC32 passes class types (JS::Handle, JSJitGetterCallArgs) by
++  // reference: pass the addresses of cells holding them.
++  masm.reserveStack(ABIStackAlignment);
++  masm.storePtr(ObjectReg, Address(masm.getStackPointer(), 0));
++  masm.storePtr(ValueReg, Address(masm.getStackPointer(), sizeof(void*)));
++  masm.moveStackPtrTo(ObjectReg);
++  masm.computeEffectiveAddress(
++      Address(masm.getStackPointer(), sizeof(void*)), ValueReg);
++#endif
+   masm.setupAlignedABICall();
+   masm.loadJSContext(JSContextReg);
+   masm.passABIArg(JSContextReg);
+@@ -20288,6 +20315,9 @@ void CodeGenerator::visitGetDOMProperty(LGetDOMProperty* ins) {
+   masm.callWithABI(DynamicFunction<JSJitGetterOp>(ins->mir()->fun()),
+                    ABIType::General,
+                    CheckUnsafeCallWithABI::DontCheckHasExitFrame);
++#ifdef JS_CODEGEN_PPC
++  masm.freeStack(ABIStackAlignment);
++#endif
+ 
+   if (ins->mir()->isInfallible()) {
+     masm.loadValue(Address(masm.getStackPointer(),
+@@ -20399,6 +20429,15 @@ void CodeGenerator::visitSetDOMProperty(LSetDOMProperty* ins) {
+ 
+   markSafepointAt(safepointOffset, ins);
+ 
++#ifdef JS_CODEGEN_PPC
++  // See visitGetDOMProperty.
++  masm.reserveStack(ABIStackAlignment);
++  masm.storePtr(ObjectReg, Address(masm.getStackPointer(), 0));
++  masm.storePtr(ValueReg, Address(masm.getStackPointer(), sizeof(void*)));
++  masm.moveStackPtrTo(ObjectReg);
++  masm.computeEffectiveAddress(
++      Address(masm.getStackPointer(), sizeof(void*)), ValueReg);
++#endif
+   masm.setupAlignedABICall();
+   masm.loadJSContext(JSContextReg);
+   masm.passABIArg(JSContextReg);
+@@ -20409,6 +20448,9 @@ void CodeGenerator::visitSetDOMProperty(LSetDOMProperty* ins) {
+   masm.callWithABI(DynamicFunction<JSJitSetterOp>(ins->mir()->fun()),
+                    ABIType::General,
+                    CheckUnsafeCallWithABI::DontCheckHasExitFrame);
++#ifdef JS_CODEGEN_PPC
++  masm.freeStack(ABIStackAlignment);
++#endif
+ 
+   masm.branchIfFalseBool(ReturnReg, masm.exceptionLabel());
+ 
+@@ -22274,7 +22316,13 @@ void CodeGenerator::visitGuardHasGetterSetter(LGuardHasGetterSetter* lir) {
+   masm.passABIArg(object);
+   masm.passABIArg(temp1);
+   masm.passABIArg(temp2);
++#ifdef JS_CODEGEN_PPC
++  using FnRaw = bool (*)(JSContext* cx, JSObject* obj, uintptr_t id,
++                         GetterSetter* getterSetter);
++  masm.callWithABI<FnRaw, ObjectHasGetterSetterPureRawId>();
++#else
+   masm.callWithABI<Fn, ObjectHasGetterSetterPure>();
++#endif
+ 
+   bailoutIfFalseBool(ReturnReg, lir->snapshot());
+ }
+diff --git a/js/src/jit/IonCacheIRCompiler.cpp b/js/src/jit/IonCacheIRCompiler.cpp
+index ffa9a0882a..610b5207c0 100644
+--- a/js/src/jit/IonCacheIRCompiler.cpp
++++ b/js/src/jit/IonCacheIRCompiler.cpp
+@@ -1347,8 +1347,15 @@ bool IonCacheIRCompiler::emitProxyGetResult(ObjOperandId objId,
+   masm.passABIArg(argProxy);
+   masm.passABIArg(argId);
+   masm.passABIArg(argVp);
++#ifdef JS_CODEGEN_PPC
++  // SysV PPC32 passes JS::Handle by reference; use the raw-pointer variant.
++  using FnRaw = bool (*)(JSContext* cx, JSObject** proxy, jsid* id, Value* vp);
++  masm.callWithABI<FnRaw, ProxyGetPropertyRaw>(
++      ABIType::General, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
++#else
+   masm.callWithABI<Fn, ProxyGetProperty>(
+       ABIType::General, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
++#endif
+ 
+   // Test for failure.
+   masm.branchIfFalseBool(ReturnReg, masm.exceptionLabel());
+diff --git a/js/src/jit/JitFrames.h b/js/src/jit/JitFrames.h
+index fd9796aa36..2b9fc46903 100644
+--- a/js/src/jit/JitFrames.h
++++ b/js/src/jit/JitFrames.h
+@@ -820,7 +820,8 @@ class IonDOMMethodExitFrameLayout {
+   }
+   inline JSObject** thisObjAddress() { return &thisObj_; }
+   inline uintptr_t argc() {
+-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++#if defined(JS_PUNBOX64) && defined(__BYTE_ORDER__) && \
++    __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+     // visitCallDOMNative stores argc in the high 32 bits of this word so the
+     // native's uint32 JSJitMethodCallArgs::argc_ overlay reads it on big-endian.
+     return argc_ >> 32;
+diff --git a/js/src/jit/MacroAssembler-inl.h b/js/src/jit/MacroAssembler-inl.h
+index ec253a0aac..c9c1b194bd 100644
+--- a/js/src/jit/MacroAssembler-inl.h
++++ b/js/src/jit/MacroAssembler-inl.h
+@@ -56,6 +56,7 @@ namespace jit {
+ 
+ template <typename Sig>
+ DynFn DynamicFunction(Sig fun) {
++  PPC32_CHECK_SIG(Sig)
+   ABIFunctionSignature<Sig> sig;
+   return DynFn{sig.address(fun)};
+ }
+@@ -161,6 +162,7 @@ void MacroAssembler::callWithABI(DynFn fun, ABIType result,
+ 
+ template <typename Sig, Sig fun>
+ void MacroAssembler::callWithABI(ABIType result, CheckUnsafeCallWithABI check) {
++  PPC32_CHECK_SIG(Sig)
+   ABIFunction<Sig, fun> abiFun;
+   AutoProfilerCallInstrumentation profiler(*this);
+   callWithABINoProfiler(abiFun.address(), result, check);
+diff --git a/js/src/jit/VMFunctions.cpp b/js/src/jit/VMFunctions.cpp
+index 9c1bc58b14..3e9d290854 100644
+--- a/js/src/jit/VMFunctions.cpp
++++ b/js/src/jit/VMFunctions.cpp
+@@ -149,6 +149,11 @@ struct TypeToPassInFloatReg<double> {
+ };
+ 
+ // Convert argument types to root types used by the gc, see TraceJitExitFrame.
++template <class T>
++struct TypeToPassAsClass {
++  static const uint32_t result = std::is_class_v<T> ? 1 : 0;
++};
++
+ template <class T>
+ struct TypeToRootType {
+   static const uint32_t result = VMFunctionData::RootNone;
+@@ -348,17 +353,24 @@ struct VMFunctionDataHelper<R (*)(JSContext*, Args...)>
+   static constexpr uint64_t argumentRootTypes() {
+     return BitMask<TypeToRootType, uint64_t, 3, Args...>::result;
+   }
++  static constexpr uint32_t argumentPassedAsClassMask() {
++    return BitMask<TypeToPassAsClass, uint32_t, 1, Args...>::result;
++  }
+   constexpr explicit VMFunctionDataHelper(const char* name)
+       : VMFunctionData(name, explicitArgs(), argumentProperties(),
+                        argumentPassedInFloatRegs(), argumentRootTypes(),
+                        outParam(), outParamRootType(), returnType(),
+-                       /* extraValuesToPop = */ 0) {}
++                       /* extraValuesToPop = */ 0) {
++    argumentPassedAsClass = argumentPassedAsClassMask();
++  }
+   constexpr explicit VMFunctionDataHelper(const char* name,
+                                           PopValues extraValuesToPop)
+       : VMFunctionData(name, explicitArgs(), argumentProperties(),
+                        argumentPassedInFloatRegs(), argumentRootTypes(),
+                        outParam(), outParamRootType(), returnType(),
+-                       extraValuesToPop.numValues) {}
++                       extraValuesToPop.numValues) {
++    argumentPassedAsClass = argumentPassedAsClassMask();
++  }
+ };
+ 
+ // GCC warns when the signature does not have matching attributes (for example
+@@ -3500,5 +3512,39 @@ void Printf1(const char* output, uintptr_t value) {
+   fprintf(stderr, "%s", line.get());
+ }
+ 
++
++bool GetNativeDataPropertyPureRawId(JSContext* cx, JSObject* obj, uintptr_t id,
++                                    MegamorphicCacheEntry* entry, Value* vp) {
++  return GetNativeDataPropertyPure(cx, obj, PropertyKey::fromRawBits(id), entry,
++                                   vp);
++}
++
++bool GetNativeDataPropertyPureWithCacheLookupRawId(
++    JSContext* cx, JSObject* obj, uintptr_t id, MegamorphicCacheEntry* entry,
++    Value* vp) {
++  return GetNativeDataPropertyPureWithCacheLookup(
++      cx, obj, PropertyKey::fromRawBits(id), entry, vp);
++}
++
++bool ObjectHasGetterSetterPureRawId(JSContext* cx, JSObject* objArg,
++                                    uintptr_t id, GetterSetter* getterSetter) {
++  return ObjectHasGetterSetterPure(cx, objArg, PropertyKey::fromRawBits(id),
++                                   getterSetter);
++}
++
++bool TypeOfEqObjectRaw(JSObject* obj, uint32_t operand) {
++  return TypeOfEqObject(obj, TypeofEqOperand::fromRawValue(uint8_t(operand)));
++}
++
++void AssertPropertyLookupRawId(NativeObject* obj, uintptr_t id, uint32_t slot) {
++  AssertPropertyLookup(obj, PropertyKey::fromRawBits(id), slot);
++}
++
++bool ProxyGetPropertyRaw(JSContext* cx, JSObject** proxy, jsid* id, Value* vp) {
++  return ProxyGetProperty(cx, HandleObject::fromMarkedLocation(proxy),
++                          HandleId::fromMarkedLocation(id),
++                          MutableHandleValue::fromMarkedLocation(vp));
++}
++
+ }  // namespace jit
+ }  // namespace js
+diff --git a/js/src/jit/VMFunctions.h b/js/src/jit/VMFunctions.h
+index 2e3fcd9107..9601d57919 100644
+--- a/js/src/jit/VMFunctions.h
++++ b/js/src/jit/VMFunctions.h
+@@ -185,6 +185,10 @@ struct VMFunctionData {
+   // have them.
+   uint32_t argumentPassedInFloatRegs;
+ 
++  // Which arguments have a class type (JS::Handle, PropertyKey, ...). The
++  // SysV PPC32 ABI passes those by reference.
++  uint32_t argumentPassedAsClass = 0;
++
+   // Number of arguments expected, excluding JSContext * as an implicit
+   // first argument and an outparam as a possible implicit final argument.
+   uint8_t explicitArgs;
+@@ -236,6 +240,10 @@ struct VMFunctionData {
+     return ((argumentPassedInFloatRegs >> explicitArg) & 1) == 1;
+   }
+ 
++  bool argPassedAsClass(uint32_t explicitArg) const {
++    return ((argumentPassedAsClass >> explicitArg) & 1) == 1;
++  }
++
+ #if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_ION_PERF)
+   const char* name() const { return name_; }
+ #endif
+@@ -741,6 +749,20 @@ void AssertMapObjectHash(JSContext* cx, MapObject* obj, const Value* value,
+ 
+ void AssertPropertyLookup(NativeObject* obj, PropertyKey id, uint32_t slot);
+ 
++// Variants of the above taking class-type arguments (PropertyKey,
++// TypeofEqOperand, JS::Handle) as raw words or pointers. JIT code calls these
++// on SysV PPC32, whose C ABI passes class-type arguments by reference.
++bool GetNativeDataPropertyPureRawId(JSContext* cx, JSObject* obj, uintptr_t id,
++                                    MegamorphicCacheEntry* entry, Value* vp);
++bool GetNativeDataPropertyPureWithCacheLookupRawId(
++    JSContext* cx, JSObject* obj, uintptr_t id, MegamorphicCacheEntry* entry,
++    Value* vp);
++bool ObjectHasGetterSetterPureRawId(JSContext* cx, JSObject* objArg,
++                                    uintptr_t id, GetterSetter* getterSetter);
++bool TypeOfEqObjectRaw(JSObject* obj, uint32_t operand);
++void AssertPropertyLookupRawId(NativeObject* obj, uintptr_t id, uint32_t slot);
++bool ProxyGetPropertyRaw(JSContext* cx, JSObject** proxy, jsid* id, Value* vp);
++
+ void WeakMapValueReadBarrier(gc::TenuredCell* cell, Zone* mapZone);
+ 
+ // Functions used when JS_MASM_VERBOSE is enabled.
+diff --git a/js/src/jit/ppc/Trampoline-ppc.cpp b/js/src/jit/ppc/Trampoline-ppc.cpp
+index 91b32f6324..04a80b0e68 100644
+--- a/js/src/jit/ppc/Trampoline-ppc.cpp
++++ b/js/src/jit/ppc/Trampoline-ppc.cpp
+@@ -393,13 +393,91 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
+   // Reserve space for the outparameter.
+   masm.reserveVMFunctionOutParamSpace(f);
+ 
++  const int32_t outParamOffset =
++      -int32_t(ExitFooterFrame::Size()) - f.sizeOfOutParamStackSlot();
++
++  // The SysV PPC32 ABI passes class-type arguments by reference. A handle
++  // (JS::Handle, JS::MutableHandle) is a class holding the address of the
++  // rooted slot, so give each one a stack cell holding that address and pass
++  // the cell's address. Class-type arguments passed by value (PropertyKey,
++  // ...) already sit in their slot: pass the slot's address.
++  auto needsCell = [&f](uint32_t explicitArg) {
++    VMFunctionData::ArgProperties props = f.argProperties(explicitArg);
++    return f.argPassedAsClass(explicitArg) &&
++           (props == VMFunctionData::WordByRef ||
++            props == VMFunctionData::DoubleByRef);
++  };
++  uint32_t numCells = f.outParam == Type_Handle ? 1 : 0;
++  for (uint32_t explicitArg = 0; explicitArg < f.explicitArgs; explicitArg++) {
++    if (needsCell(explicitArg)) {
++      numCells++;
++    }
++  }
++  const uint32_t cellBytes =
++      AlignBytes(numCells * sizeof(void*), ABIStackAlignment);
++  const int32_t cellsBase = outParamOffset - int32_t(cellBytes);
++  if (numCells) {
++    masm.reserveStack(cellBytes);
++    Register scratch = regs.getAny();
++    uint32_t cell = 0;
++    size_t disp = ExitFrameLayout::Size();
++    for (uint32_t explicitArg = 0; explicitArg < f.explicitArgs;
++         explicitArg++) {
++      VMFunctionData::ArgProperties props = f.argProperties(explicitArg);
++      if (needsCell(explicitArg)) {
++        masm.computeEffectiveAddress(Address(FramePointer, disp), scratch);
++        masm.storePtr(scratch,
++                      Address(FramePointer, cellsBase + cell * sizeof(void*)));
++        cell++;
++      }
++      disp += (props == VMFunctionData::WordByValue ||
++               props == VMFunctionData::WordByRef)
++                  ? sizeof(void*)
++                  : props == VMFunctionData::DoubleByValue ? sizeof(double)
++                                                           : 2 * sizeof(void*);
++    }
++    if (f.outParam == Type_Handle) {
++      masm.computeEffectiveAddress(Address(FramePointer, outParamOffset),
++                                   scratch);
++      masm.storePtr(scratch,
++                    Address(FramePointer, cellsBase + cell * sizeof(void*)));
++      cell++;
++    }
++    MOZ_ASSERT(cell == numCells);
++  }
++
+   masm.setupUnalignedABICallDontSaveRestoreSP();
+   masm.passABIArg(cxreg);
+ 
+   size_t argDisp = ExitFrameLayout::Size();
++  uint32_t nextCell = 0;
++  auto passCell = [&]() {
++    masm.passABIArg(
++        MoveOperand(FramePointer, cellsBase + nextCell * sizeof(void*),
++                    MoveOperand::Kind::EffectiveAddress),
++        ABIType::General);
++    nextCell++;
++  };
+ 
+   // Copy any arguments.
+   for (uint32_t explicitArg = 0; explicitArg < f.explicitArgs; explicitArg++) {
++    if (needsCell(explicitArg)) {
++      passCell();
++      argDisp += f.argProperties(explicitArg) == VMFunctionData::WordByRef
++                     ? sizeof(void*)
++                     : 2 * sizeof(void*);
++      continue;
++    }
++    if (f.argPassedAsClass(explicitArg)) {
++      // A class passed by value: its bytes are in the slot.
++      masm.passABIArg(MoveOperand(FramePointer, argDisp,
++                                  MoveOperand::Kind::EffectiveAddress),
++                      ABIType::General);
++      argDisp += f.argProperties(explicitArg) == VMFunctionData::WordByValue
++                     ? sizeof(void*)
++                     : sizeof(double);
++      continue;
++    }
+     switch (f.argProperties(explicitArg)) {
+       case VMFunctionData::WordByValue:
+         masm.passABIArg(MoveOperand(FramePointer, argDisp), ABIType::General);
+@@ -437,13 +515,14 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
+   }
+ 
+   // Copy the implicit outparam, if any.
+-  const int32_t outParamOffset =
+-      -int32_t(ExitFooterFrame::Size()) - f.sizeOfOutParamStackSlot();
+-  if (f.outParam != Type_Void) {
++  if (f.outParam == Type_Handle) {
++    passCell();
++  } else if (f.outParam != Type_Void) {
+     masm.passABIArg(MoveOperand(FramePointer, outParamOffset,
+                                 MoveOperand::Kind::EffectiveAddress),
+                     ABIType::General);
+   }
++  MOZ_ASSERT(nextCell == numCells);
+ 
+   masm.callWithABI(nativeFun, ABIType::General,
+                    CheckUnsafeCallWithABI::DontCheckHasExitFrame);

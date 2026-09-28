@@ -1,0 +1,243 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sun, 27 Sep 2026 13:34:54 -0700
+Subject: [PATCH 19/19] swgl: AltiVec paths for math helpers and packs; vector
+ reciprocal estimates on ppc32
+
+Pixel-identical on Wikipedia/GitHub/bench screenshots; no measurable
+scroll-benchmark gain (Renderer is not the bottleneck there).
+---
+ gfx/wr/swgl/build.rs          |  9 ++++++++-
+ gfx/wr/swgl/src/blend.h       |  9 +++++++++
+ gfx/wr/swgl/src/glsl.h        | 35 +++++++++++++++++++++++++++++++++++
+ gfx/wr/swgl/src/texture.h     | 13 +++++++++++++
+ gfx/wr/swgl/src/vector_type.h |  9 +++++++++
+ 5 files changed, 74 insertions(+), 1 deletion(-)
+
+diff --git a/gfx/wr/swgl/build.rs b/gfx/wr/swgl/build.rs
+index 66e22ce7d5..3803d961e8 100644
+--- a/gfx/wr/swgl/build.rs
++++ b/gfx/wr/swgl/build.rs
+@@ -234,9 +234,16 @@ fn main() {
+         } else if tool.is_like_clang() {
+             // gcc only supports -mrecip=none on some targets so to keep
+             // things simple we don't use -ffast-math with gcc at all
++            // AltiVec has no vector divide or square root, so without
++            // estimates every vector division becomes four scalar fdivs.
++            let recip = if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("powerpc") {
++                "-mrecip=vec-divf,vec-sqrtf"
++            } else {
++                "-mrecip=none"
++            };
+             build
+                 .flag("-ffast-math")
+-                .flag("-mrecip=none")
++                .flag(recip)
+                 .flag("-fno-finite-math-only");
+         }
+     }
+diff --git a/gfx/wr/swgl/src/blend.h b/gfx/wr/swgl/src/blend.h
+index af29fb4c09..87b6033c6a 100644
+--- a/gfx/wr/swgl/src/blend.h
++++ b/gfx/wr/swgl/src/blend.h
+@@ -7,6 +7,8 @@ static ALWAYS_INLINE HalfRGBA8 packRGBA8(I32 a, I32 b) {
+   return _mm_packs_epi32(a, b);
+ #elif USE_NEON
+   return vcombine_u16(vqmovun_s32(a), vqmovun_s32(b));
++#elif USE_ALTIVEC
++  return bit_cast<HalfRGBA8>(vec_packsu(bit_cast<AvI32>(a), bit_cast<AvI32>(b)));
+ #else
+   return CONVERT(combine(a, b), HalfRGBA8);
+ #endif
+@@ -59,6 +61,9 @@ static ALWAYS_INLINE WideR8 packR8(I32 a) {
+   return lowHalf(bit_cast<V8<uint16_t>>(_mm_packs_epi32(a, a)));
+ #elif USE_NEON
+   return vqmovun_s32(a);
++#elif USE_ALTIVEC
++  return lowHalf(bit_cast<V8<uint16_t>>(
++      vec_packsu(bit_cast<AvI32>(a), bit_cast<AvI32>(a))));
+ #else
+   return CONVERT(a, WideR8);
+ #endif
+@@ -237,6 +242,8 @@ static ALWAYS_INLINE HalfRGBA8 min(HalfRGBA8 x, HalfRGBA8 y) {
+       _mm_min_epi16(bit_cast<V8<int16_t>>(x), bit_cast<V8<int16_t>>(y)));
+ #elif USE_NEON
+   return vminq_u16(x, y);
++#elif USE_ALTIVEC
++  return bit_cast<HalfRGBA8>(vec_min(bit_cast<AvU16>(x), bit_cast<AvU16>(y)));
+ #else
+   return if_then_else(x < y, x, y);
+ #endif
+@@ -254,6 +261,8 @@ static ALWAYS_INLINE HalfRGBA8 max(HalfRGBA8 x, HalfRGBA8 y) {
+       _mm_max_epi16(bit_cast<V8<int16_t>>(x), bit_cast<V8<int16_t>>(y)));
+ #elif USE_NEON
+   return vmaxq_u16(x, y);
++#elif USE_ALTIVEC
++  return bit_cast<HalfRGBA8>(vec_max(bit_cast<AvU16>(x), bit_cast<AvU16>(y)));
+ #else
+   return if_then_else(x > y, x, y);
+ #endif
+diff --git a/gfx/wr/swgl/src/glsl.h b/gfx/wr/swgl/src/glsl.h
+index b9e7982948..3a7b5101fd 100644
+--- a/gfx/wr/swgl/src/glsl.h
++++ b/gfx/wr/swgl/src/glsl.h
+@@ -45,6 +45,17 @@ typedef sampler2DRect_impl* sampler2DRect;
+ SI bool test_all(Bool cond) { return _mm_movemask_ps(cond) == 0xF; }
+ SI bool test_any(Bool cond) { return _mm_movemask_ps(cond) != 0; }
+ SI bool test_none(Bool cond) { return _mm_movemask_ps(cond) == 0; }
++#elif USE_ALTIVEC
++// Like movemask: a lane counts as true when its sign bit is set.
++SI bool test_all(Bool cond) {
++  return vec_all_lt(bit_cast<AvI32>(cond), (AvI32){0, 0, 0, 0});
++}
++SI bool test_any(Bool cond) {
++  return vec_any_lt(bit_cast<AvI32>(cond), (AvI32){0, 0, 0, 0});
++}
++SI bool test_none(Bool cond) {
++  return vec_all_ge(bit_cast<AvI32>(cond), (AvI32){0, 0, 0, 0});
++}
+ #else
+ SI bool test_all(Bool cond) {
+   return bit_cast<uint32_t>(CONVERT(cond, U8)) == 0xFFFFFFFFU;
+@@ -171,6 +182,8 @@ SI Float min(Float a, Float b) {
+   return _mm_min_ps(a, b);
+ #elif USE_NEON
+   return vminq_f32(a, b);
++#elif USE_ALTIVEC
++  return bit_cast<Float>(vec_min(bit_cast<AvFloat>(a), bit_cast<AvFloat>(b)));
+ #else
+   return if_then_else(a < b, a, b);
+ #endif
+@@ -181,6 +194,8 @@ SI Float max(Float a, Float b) {
+   return _mm_max_ps(a, b);
+ #elif USE_NEON
+   return vmaxq_f32(a, b);
++#elif USE_ALTIVEC
++  return bit_cast<Float>(vec_max(bit_cast<AvFloat>(a), bit_cast<AvFloat>(b)));
+ #else
+   return if_then_else(a > b, a, b);
+ #endif
+@@ -202,6 +217,12 @@ SI Float sqrt(Float v) {
+   e *= vrsqrtsq_f32(v, e * e);
+   e *= vrsqrtsq_f32(v, e * e);
+   return if_then(v != Float(0.0f), v * e);
++#elif USE_ALTIVEC
++  // No fsqrt on the G4: estimate 1/sqrt(v), refine twice, multiply by v.
++  Float e = bit_cast<Float>(vec_rsqrte(bit_cast<AvFloat>(v)));
++  e *= (3.0f - v * e * e) * 0.5f;
++  e *= (3.0f - v * e * e) * 0.5f;
++  return if_then(v != Float(0.0f), v * e);
+ #else
+   return (Float){sqrtf(v.x), sqrtf(v.y), sqrtf(v.z), sqrtf(v.w)};
+ #endif
+@@ -262,6 +283,9 @@ SI Float recip(Float v) {
+ #elif USE_NEON
+   Float e = vrecpeq_f32(v);
+   return vrecpsq_f32(v, e) * e;
++#elif USE_ALTIVEC
++  Float e = bit_cast<Float>(vec_re(bit_cast<AvFloat>(v)));
++  return (2.0f - v * e) * e;
+ #else
+   return 1.0f / v;
+ #endif
+@@ -281,6 +305,9 @@ SI Float inversesqrt(Float v) {
+ #elif USE_NEON
+   Float e = vrsqrteq_f32(v);
+   return vrsqrtsq_f32(v, e * e) * e;
++#elif USE_ALTIVEC
++  Float e = bit_cast<Float>(vec_rsqrte(bit_cast<AvFloat>(v)));
++  return (3.0f - v * e * e) * 0.5f * e;
+ #else
+   return 1.0f / sqrt(v);
+ #endif
+@@ -730,8 +757,12 @@ I32 cast(Float v) { return CONVERT(v, I32); }
+ float floor(float a) { return floorf(a); }
+ 
+ Float floor(Float v) {
++#if USE_ALTIVEC
++  return bit_cast<Float>(vec_floor(bit_cast<AvFloat>(v)));
++#else
+   Float roundtrip = cast(cast(v));
+   return roundtrip - if_then(roundtrip > v, Float(1));
++#endif
+ }
+ 
+ vec2 floor(vec2 v) { return vec2(floor(v.x), floor(v.y)); }
+@@ -745,8 +776,12 @@ vec2_scalar floor(vec2_scalar v) {
+ float ceil(float a) { return ceilf(a); }
+ 
+ Float ceil(Float v) {
++#if USE_ALTIVEC
++  return bit_cast<Float>(vec_ceil(bit_cast<AvFloat>(v)));
++#else
+   Float roundtrip = cast(cast(v));
+   return roundtrip + if_then(roundtrip < v, Float(1));
++#endif
+ }
+ 
+ // Round to nearest even
+diff --git a/gfx/wr/swgl/src/texture.h b/gfx/wr/swgl/src/texture.h
+index 2f0a2ab55b..55ab1ee50f 100644
+--- a/gfx/wr/swgl/src/texture.h
++++ b/gfx/wr/swgl/src/texture.h
+@@ -26,6 +26,9 @@ SI PackedRGBA8 pack(WideRGBA8 p) {
+ #elif USE_NEON
+   return vcombine_u8(vqmovun_s16(bit_cast<V8<int16_t>>(lowHalf(p))),
+                      vqmovun_s16(bit_cast<V8<int16_t>>(highHalf(p))));
++#elif USE_ALTIVEC
++  return bit_cast<PackedRGBA8>(vec_packsu(bit_cast<AvI16>(lowHalf(p)),
++                                          bit_cast<AvI16>(highHalf(p))));
+ #else
+   return genericPackWide(p);
+ #endif
+@@ -44,6 +47,10 @@ SI PackedR8 pack(WideR8 p) {
+ #elif USE_NEON
+   return lowHalf(
+       bit_cast<V8<uint8_t>>(vqmovun_s16(bit_cast<V8<int16_t>>(expand(p)))));
++#elif USE_ALTIVEC
++  auto m = bit_cast<AvI16>(expand(p));
++  auto r = bit_cast<V16<uint8_t>>(vec_packsu(m, m));
++  return SHUFFLE(r, r, 0, 1, 2, 3);
+ #else
+   return genericPackWide(p);
+ #endif
+@@ -57,6 +64,9 @@ SI PackedRG8 pack(WideRG8 p) {
+   return lowHalf(bit_cast<V16<uint8_t>>(_mm_packus_epi16(p, p)));
+ #elif USE_NEON
+   return bit_cast<V8<uint8_t>>(vqmovun_s16(bit_cast<V8<int16_t>>(p)));
++#elif USE_ALTIVEC
++  auto r = bit_cast<V16<uint8_t>>(vec_packsu(bit_cast<AvI16>(p), bit_cast<AvI16>(p)));
++  return lowHalf(r);
+ #else
+   return genericPackWide(p);
+ #endif
+@@ -66,6 +76,9 @@ SI I32 clampCoord(I32 coord, int limit, int base = 0) {
+ #if USE_SSE2
+   return _mm_min_epi16(_mm_max_epi16(coord, _mm_set1_epi32(base)),
+                        _mm_set1_epi32(limit - 1));
++#elif USE_ALTIVEC
++  return bit_cast<I32>(vec_min(vec_max(bit_cast<AvI32>(coord), vec_splats(base)),
++                               vec_splats(limit - 1)));
+ #else
+   return clamp(coord, base, limit - 1);
+ #endif
+diff --git a/gfx/wr/swgl/src/vector_type.h b/gfx/wr/swgl/src/vector_type.h
+index 36226aa00f..a5c9aa214f 100644
+--- a/gfx/wr/swgl/src/vector_type.h
++++ b/gfx/wr/swgl/src/vector_type.h
+@@ -11,6 +11,15 @@
+ #    include <arm_neon.h>
+ #    define USE_NEON 1
+ #  endif
++#  if defined(__ALTIVEC__) && !defined(__VSX__)
++#    include <altivec.h>
++#    define USE_ALTIVEC 1
++typedef __vector float AvFloat;
++typedef __vector signed int AvI32;
++typedef __vector signed short AvI16;
++typedef __vector unsigned short AvU16;
++typedef __vector unsigned char AvU8;
++#  endif
+ #endif
+ 
+ namespace glsl {

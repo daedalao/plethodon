@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 22:15:57 -0700
+Subject: [PATCH 18/19] gtk: no native layer root on X11 (fixes SW-WebRender +
+ OpenGL compositing crash)
+
+---
+ widget/gtk/GtkCompositorWidget.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/widget/gtk/GtkCompositorWidget.cpp b/widget/gtk/GtkCompositorWidget.cpp
+index ec7d9c1e6f..936b864f01 100644
+--- a/widget/gtk/GtkCompositorWidget.cpp
++++ b/widget/gtk/GtkCompositorWidget.cpp
+@@ -144,6 +144,11 @@ LayoutDeviceIntRegion GtkCompositorWidget::GetTransparentRegion() {
+ 
+ #ifdef MOZ_WAYLAND
+ mozilla::layers::NativeLayerRoot* GtkCompositorWidget::GetNativeLayerRoot() {
++  // Native layers are Wayland subsurfaces; on X11 there is no layer root
++  // (CompositorOGL asks unconditionally when SWGL + OpenGL compositing).
++  if (!GdkIsWaylandDisplay()) {
++    return nullptr;
++  }
+   if (!mNativeLayerRoot) {
+     LOG("GtkCompositorWidget::GetNativeLayerRoot [%p] create",
+         (void*)mWidget.get());

@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 20:03:04 -0700
+Subject: [PATCH 15/19] ppc32: jump table entries are RawPointer CodeLabels
+
+---
+ js/src/jit/ppc/CodeGenerator-ppc.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/js/src/jit/ppc/CodeGenerator-ppc.cpp b/js/src/jit/ppc/CodeGenerator-ppc.cpp
+index 5c1f287193..0c8b9d3b50 100644
+--- a/js/src/jit/ppc/CodeGenerator-ppc.cpp
++++ b/js/src/jit/ppc/CodeGenerator-ppc.cpp
+@@ -232,6 +232,7 @@ void CodeGeneratorPPC::visitOutOfLineTableSwitch(OutOfLineTableSwitch* ool) {
+     BufferOffset entry = masm.writeInst(uint32_t(-1));
+     cl.patchAt()->bind(entry.getOffset());
+     cl.target()->bind(caseoffset);
++    cl.setLinkMode(CodeLabel::RawPointer);
+     masm.addCodeLabel(cl);
+   }
+ }

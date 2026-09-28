@@ -1,0 +1,239 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 17:15:41 -0700
+Subject: [PATCH 08/19] Big-endian 32-bit fixes: TypedArray inline data pointer
+ store, int64 slot base address; ppc32 irregexp/signal/VMFunction/LIROps
+ plumbing
+
+---
+ .../irregexp/RegExpNativeMacroAssembler.cpp   |  9 ++++-
+ js/src/jit/LIROps.yaml                        | 40 +++++++++++++++++--
+ js/src/jit/VMFunctions.cpp                    | 12 ++++--
+ js/src/jit/shared/CodeGenerator-shared-inl.h  |  7 +++-
+ js/src/vm/TypedArrayObject.cpp                |  6 ++-
+ js/src/wasm/WasmSignalHandlers.cpp            | 13 ++++--
+ 6 files changed, 73 insertions(+), 14 deletions(-)
+
+diff --git a/js/src/irregexp/RegExpNativeMacroAssembler.cpp b/js/src/irregexp/RegExpNativeMacroAssembler.cpp
+index 3d514c6514..645d006055 100644
+--- a/js/src/irregexp/RegExpNativeMacroAssembler.cpp
++++ b/js/src/irregexp/RegExpNativeMacroAssembler.cpp
+@@ -1006,11 +1006,14 @@ void SMRegExpMacroAssembler::CheckBacktrackStackLimit() {
+       AbsoluteAddress(isolate()->regexp_stack()->limit_address_address()),
+       backtrack_stack_pointer_, &no_stack_overflow);
+ 
+-#if defined(JS_CODEGEN_PPC64) || defined(JS_CODEGEN_PPC)
++#if defined(JS_CODEGEN_PPC64)
+   // LR on PowerPC isn't a GPR, so we have to explicitly save it before
+   // calling or the regexp's return address will be clobbered.
+   masm_.xs_mflr(temp1_);
+   masm_.as_stdu(temp1_, masm_.getStackPointer(), -8);
++#elif defined(JS_CODEGEN_PPC)
++  masm_.xs_mflr(temp1_);
++  masm_.as_stwu(temp1_, masm_.getStackPointer(), -4);
+ #endif
+ 
+   masm_.call(&stack_overflow_label_);
+@@ -1019,6 +1022,10 @@ void SMRegExpMacroAssembler::CheckBacktrackStackLimit() {
+   masm_.as_ld(temp1_, masm_.getStackPointer(), 0);
+   masm_.xs_mtlr(temp1_);
+   masm_.as_addi(masm_.getStackPointer(), masm_.getStackPointer(), 8);
++#elif defined(JS_CODEGEN_PPC)
++  masm_.as_lwz(temp1_, masm_.getStackPointer(), 0);
++  masm_.xs_mtlr(temp1_);
++  masm_.as_addi(masm_.getStackPointer(), masm_.getStackPointer(), 4);
+ #endif
+ 
+   // Exit with an exception if the call failed
+diff --git a/js/src/jit/LIROps.yaml b/js/src/jit/LIROps.yaml
+index bffbabf3d0..7f08baecf8 100644
+--- a/js/src/jit/LIROps.yaml
++++ b/js/src/jit/LIROps.yaml
+@@ -1271,7 +1271,7 @@
+   operands:
+     lhs: Int64
+     rhs: Int64
+-#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_ARM)
++#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_PPC)
+   num_temps: 1
+ #endif
+   defer_init: true
+@@ -2247,7 +2247,7 @@
+     value: WordSized
+   # Additional temp that may be used on LL/SC platforms for the flag result of the store.
+   # Needs additional temps on LL/SC platforms to extract/insert bits of word.
+-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64)
++#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_PPC)
+   num_temps: 1
+ #elif defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64) || defined(JS_CODEGEN_PPC64)
+   num_temps: 3
+@@ -2269,7 +2269,7 @@
+     elements: WordSized
+     index: WordSized
+     value: Int64
+-#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_ARM)
++#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_PPC)
+   num_temps64: 1
+ #endif
+   mir_op: StoreUnboxedScalar
+@@ -4402,6 +4402,40 @@
+   mir_op: WasmAtomicExchangeHeap
+ #endif
+ 
++#ifdef JS_CODEGEN_PPC
++- name: BoxFloatingPoint
++  result_type: BoxedValue
++  operands:
++    input: WordSized
++  arguments:
++    type: MIRType
++  num_temps: 1
++  extra_name: true
++
++- name: ModMaskI
++  result_type: WordSized
++  operands:
++    input: WordSized
++  arguments:
++    shift: int32_t
++  num_temps: 2
++  mir_op: Mod
++
++- name: UDiv
++  result_type: WordSized
++  operands:
++    lhs: WordSized
++    rhs: WordSized
++  mir_op: Div
++
++- name: UMod
++  result_type: WordSized
++  operands:
++    lhs: WordSized
++    rhs: WordSized
++  mir_op: Mod
++#endif
++
+ #ifdef JS_CODEGEN_PPC64
+ - name: DivOrModI64
+   gen_boilerplate: false
+diff --git a/js/src/jit/VMFunctions.cpp b/js/src/jit/VMFunctions.cpp
+index 976758b5b2..9c1bc58b14 100644
+--- a/js/src/jit/VMFunctions.cpp
++++ b/js/src/jit/VMFunctions.cpp
+@@ -94,6 +94,12 @@ struct ReturnTypeToDataType<T*> {
+ // Convert argument types to properties of the argument known by the jit.
+ template <class T>
+ struct TypeToArgProperties {
++#ifdef JS_CODEGEN_PPC
++  // The SysV PPC32 ABI passes classes by reference, but VM wrappers pass
++  // 8-byte by-value arguments as two words. Take Values by handle.
++  static_assert(!std::is_same_v<T, JS::Value>,
++                "VM functions must not take JS::Value by value on ppc32");
++#endif
+   static const uint32_t result =
+       (sizeof(T) <= sizeof(void*) ? VMFunctionData::Word
+                                   : VMFunctionData::Double);
+@@ -101,17 +107,17 @@ struct TypeToArgProperties {
+ template <>
+ struct TypeToArgProperties<const Value&> {
+   static const uint32_t result =
+-      TypeToArgProperties<Value>::result | VMFunctionData::ByRef;
++      VMFunctionData::Double | VMFunctionData::ByRef;
+ };
+ template <>
+ struct TypeToArgProperties<HandleValue> {
+   static const uint32_t result =
+-      TypeToArgProperties<Value>::result | VMFunctionData::ByRef;
++      VMFunctionData::Double | VMFunctionData::ByRef;
+ };
+ template <>
+ struct TypeToArgProperties<MutableHandleValue> {
+   static const uint32_t result =
+-      TypeToArgProperties<Value>::result | VMFunctionData::ByRef;
++      VMFunctionData::Double | VMFunctionData::ByRef;
+ };
+ template <>
+ struct TypeToArgProperties<HandleId> {
+diff --git a/js/src/jit/shared/CodeGenerator-shared-inl.h b/js/src/jit/shared/CodeGenerator-shared-inl.h
+index ee35054219..f8f49193c1 100644
+--- a/js/src/jit/shared/CodeGenerator-shared-inl.h
++++ b/js/src/jit/shared/CodeGenerator-shared-inl.h
+@@ -310,9 +310,12 @@ Address CodeGeneratorShared::ToAddress(const LAllocation* a) const {
+ template <BaseRegForAddress Base>
+ Address CodeGeneratorShared::ToAddress(const LInt64Allocation& a) const {
+ #if JS_BITS_PER_WORD == 32
++  // The address of the whole int64 (its low word is not first on
++  // big-endian).
+   Address low = ToAddress<Base>(a.low());
+-  MOZ_ASSERT(HighWord(low) == ToAddress<Base>(a.high()));
+-  return low;
++  Address base(low.base, low.offset - int32_t(INT64LOW_OFFSET));
++  MOZ_ASSERT(HighWord(base) == ToAddress<Base>(a.high()));
++  return base;
+ #else
+   return ToAddress<Base>(a.value());
+ #endif
+diff --git a/js/src/vm/TypedArrayObject.cpp b/js/src/vm/TypedArrayObject.cpp
+index b6f765f0ed..f54c916088 100644
+--- a/js/src/vm/TypedArrayObject.cpp
++++ b/js/src/vm/TypedArrayObject.cpp
+@@ -316,9 +316,11 @@ bool FixedLengthTypedArrayObject::hasInlineElements() const {
+ }
+ 
+ void FixedLengthTypedArrayObject::setInlineElements() {
++  // Store the whole private Value (no barrier): on 32-bit big-endian the
++  // pointer is the second word of the slot, not the first.
+   char* dataSlot = reinterpret_cast<char*>(this) + dataOffset();
+-  *reinterpret_cast<void**>(dataSlot) =
+-      this->fixedData(FixedLengthTypedArrayObject::FIXED_DATA_START);
++  *reinterpret_cast<JS::Value*>(dataSlot) = JS::PrivateValue(
++      this->fixedData(FixedLengthTypedArrayObject::FIXED_DATA_START));
+ }
+ 
+ bool FixedLengthTypedArrayObject::hasMallocedElements(JSContext* cx) const {
+diff --git a/js/src/wasm/WasmSignalHandlers.cpp b/js/src/wasm/WasmSignalHandlers.cpp
+index c8a871e7f4..4e7a472342 100644
+--- a/js/src/wasm/WasmSignalHandlers.cpp
++++ b/js/src/wasm/WasmSignalHandlers.cpp
+@@ -164,6 +164,13 @@ using namespace js::wasm;
+ #      define R32_sig(p) ((p)->uc_mcontext.gp_regs[32])
+ #      define R36_sig(p) ((p)->uc_mcontext.gp_regs[36])
+ #    endif
++#    if defined(__linux__) && defined(__powerpc__) && !defined(__powerpc64__)
++// 32-bit PowerPC: the machine context is behind uc_regs.
++#      define R01_sig(p) ((p)->uc_mcontext.uc_regs->gregs[1])
++#      define R31_sig(p) ((p)->uc_mcontext.uc_regs->gregs[31])
++#      define R32_sig(p) ((p)->uc_mcontext.uc_regs->gregs[32])
++#      define R36_sig(p) ((p)->uc_mcontext.uc_regs->gregs[36])
++#    endif
+ #    if defined(__linux__) && defined(__loongarch__)
+ #      define EPC_sig(p) ((p)->uc_mcontext.__pc)
+ #      define RRA_sig(p) ((p)->uc_mcontext.__gregs[1])
+@@ -418,7 +425,7 @@ struct macos_aarch64_context {
+ #    define SP_sig(p) RSP_sig(p)
+ #    define LR_sig(p) R31_sig(p)
+ #  elif defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
+-      defined(__PPC64LE__)
++      defined(__PPC64LE__) || defined(__powerpc__)
+ #    define PC_sig(p) R32_sig(p)
+ #    define SP_sig(p) R01_sig(p)
+ #    define FP_sig(p) R31_sig(p)
+@@ -469,7 +476,7 @@ static uint8_t* ContextToSP(CONTEXT* context) {
+ 
+ #  if defined(__arm__) || defined(__aarch64__) || defined(__mips__) || \
+       defined(__loongarch__) || defined(__riscv) || \
+-      defined(__ppc64__) || defined(__PPC64__)
++      defined(__ppc64__) || defined(__PPC64__) || defined(__powerpc__)
+ static uint8_t* ContextToLR(CONTEXT* context) {
+ #    ifdef LR_sig
+   return mozilla::BitwiseCast<uint8_t*>(LR_sig(context));
+@@ -487,7 +494,7 @@ static JS::ProfilingFrameIterator::RegisterState ToRegisterState(
+   state.sp = ContextToSP(context);
+ #  if defined(__arm__) || defined(__aarch64__) || defined(__mips__) || \
+       defined(__loongarch__) || defined(__riscv) || \
+-      defined(__ppc64__) || defined(__PPC64__)
++      defined(__ppc64__) || defined(__PPC64__) || defined(__powerpc__)
+   state.lr = ContextToLR(context);
+ #  else
+   state.lr = (void*)UINTPTR_MAX;

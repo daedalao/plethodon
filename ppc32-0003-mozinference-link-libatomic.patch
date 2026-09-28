@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 13:44:19 -0700
+Subject: [PATCH 03/19] mozinference: link libatomic
+
+---
+ config/external/mozinference/moz.build | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/config/external/mozinference/moz.build b/config/external/mozinference/moz.build
+index 9b78f07de5..9f0b4fefef 100644
+--- a/config/external/mozinference/moz.build
++++ b/config/external/mozinference/moz.build
+@@ -11,3 +11,6 @@ SHARED_LIBRARY_NAME = "mozinference"
+ 
+ # Export only the symbols we need for dynamic linking
+ SYMBOLS_FILE = "mozinference.symbols"
++
++# ggml uses 64-bit atomics (ppc32 needs libatomic)
++OS_LIBS += CONFIG["LIBATOMIC_LIBS"]

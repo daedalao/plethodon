@@ -1,0 +1,77 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 18:16:33 -0700
+Subject: [PATCH 12/19] 32-bit big-endian fixes: RawInt32 stub fields, inline
+ bytecode Values on NUNBOX32
+
+---
+ js/src/jit/BaselineCacheIRCompiler.cpp |  3 ++-
+ js/src/jit/BaselineCodeGen.cpp         | 10 ++++++++++
+ js/src/jit/CacheIRCompiler.cpp         |  4 +++-
+ js/src/jit/shared/LIR-shared.h         |  3 ++-
+ 4 files changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/js/src/jit/BaselineCacheIRCompiler.cpp b/js/src/jit/BaselineCacheIRCompiler.cpp
+index 7a34f07a6f..09705c61f8 100644
+--- a/js/src/jit/BaselineCacheIRCompiler.cpp
++++ b/js/src/jit/BaselineCacheIRCompiler.cpp
+@@ -191,7 +191,8 @@ Address BaselineCacheIRCompiler::stubAddress(uint32_t offset) const {
+ // A 32-bit load of such a field must therefore skip the tag word. No-op on LE.
+ static Address Int32StubFieldAddr(Address addr) {
+ #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+-  addr.offset += sizeof(int32_t);
++  // (On 32-bit targets the word is the int32 itself.)
++  addr.offset += sizeof(uintptr_t) - sizeof(int32_t);
+ #endif
+   return addr;
+ }
+diff --git a/js/src/jit/BaselineCodeGen.cpp b/js/src/jit/BaselineCodeGen.cpp
+index d262b65f14..226ad537af 100644
+--- a/js/src/jit/BaselineCodeGen.cpp
++++ b/js/src/jit/BaselineCodeGen.cpp
+@@ -528,6 +528,16 @@ static void LoadInlineValueOperand(MacroAssembler& masm, ValueOperand dest) {
+   // The inline Value is stored little-endian in the bytecode (see
+   // GET_INLINE_VALUE), so byte-reverse it to native order on big-endian.
+   masm.byteSwap64(Register64(dest.valueReg()));
++#elif defined(JS_NUNBOX32) && defined(__BYTE_ORDER__) && \
++    __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++  // Little-endian bytes in the bytecode: the first word loaded (into the type
++  // register) is the byte-reversed payload and the second the byte-reversed
++  // tag. Byte-reverse both and exchange them.
++  masm.byteSwap32(dest.typeReg());
++  masm.byteSwap32(dest.payloadReg());
++  masm.xor32(dest.typeReg(), dest.payloadReg());
++  masm.xor32(dest.payloadReg(), dest.typeReg());
++  masm.xor32(dest.typeReg(), dest.payloadReg());
+ #endif
+ }
+ 
+diff --git a/js/src/jit/CacheIRCompiler.cpp b/js/src/jit/CacheIRCompiler.cpp
+index 1531b626d8..480f53107e 100644
+--- a/js/src/jit/CacheIRCompiler.cpp
++++ b/js/src/jit/CacheIRCompiler.cpp
+@@ -9697,7 +9697,9 @@ void CacheIRCompiler::emitLoadStubField(StubFieldOffset val, Register dest) {
+         // slot; on big-endian those bytes are at offset +4 (the high/zero half
+         // is at +0). Loading +0 there would read zero. No-op on little-endian.
+ #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+-        masm.load32(Address(load.base, load.offset + 4), dest);
++        masm.load32(Address(load.base, load.offset + int32_t(sizeof(uintptr_t) -
++                                                             sizeof(int32_t))),
++                    dest);
+ #else
+         masm.load32(load, dest);
+ #endif
+diff --git a/js/src/jit/shared/LIR-shared.h b/js/src/jit/shared/LIR-shared.h
+index 03caff4094..3bbb28f5a5 100644
+--- a/js/src/jit/shared/LIR-shared.h
++++ b/js/src/jit/shared/LIR-shared.h
+@@ -1010,7 +1010,8 @@ class LWasmStackResult : public LInstructionHelper<1, 1, 0> {
+   LStackSlot result(uint32_t base) const {
+     auto width = LStackSlot::width(LDefinition::TypeFrom(mir()->type()));
+     uint32_t slot = base - mir()->result().offset();
+-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++#if defined(JS_PUNBOX64) && defined(__BYTE_ORDER__) && \
++    __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+     // An i32 stack result occupies a pointer-sized slot and is written as a
+     // 64-bit store, so on big-endian its value is the low word at byte offset
+     // +4. Stack slot numbers grow downward in memory, so subtracting moves the

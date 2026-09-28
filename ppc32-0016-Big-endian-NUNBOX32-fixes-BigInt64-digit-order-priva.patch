@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 20:35:04 -0700
+Subject: [PATCH 16/19] Big-endian NUNBOX32 fixes: BigInt64 digit order,
+ private-pointer slot address, ensureDouble payload
+
+---
+ js/src/jit/MacroAssembler.cpp | 8 ++++++++
+ js/src/jit/MacroAssembler.h   | 5 +++++
+ js/src/vm/NativeObject.h      | 6 +++++-
+ 3 files changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/js/src/jit/MacroAssembler.cpp b/js/src/jit/MacroAssembler.cpp
+index b285e73a38..3f71429e7e 100644
+--- a/js/src/jit/MacroAssembler.cpp
++++ b/js/src/jit/MacroAssembler.cpp
+@@ -2289,7 +2289,15 @@ void MacroAssembler::initializeBigInt64(Scalar::Type type, Register bigInt,
+                 "BigInt inline storage can store at least two digits");
+ #endif
+ 
++#if !defined(JS_PUNBOX64) && (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
++  // Digits are ordered least significant first, but store64 writes the
++  // high word first on big-endian targets.
++  store32(val.low, Address(bigInt, js::BigInt::offsetOfInlineDigits()));
++  store32(val.high, Address(bigInt, js::BigInt::offsetOfInlineDigits() +
++                                        sizeof(BigInt::Digit)));
++#else
+   store64(val, Address(bigInt, js::BigInt::offsetOfInlineDigits()));
++#endif
+ 
+   bind(&done);
+ }
+diff --git a/js/src/jit/MacroAssembler.h b/js/src/jit/MacroAssembler.h
+index 2723432d46..32dcb207b7 100644
+--- a/js/src/jit/MacroAssembler.h
++++ b/js/src/jit/MacroAssembler.h
+@@ -5705,7 +5705,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
+     branchTestDouble(Assembler::Equal, source, &isDouble);
+     branchTestInt32(Assembler::NotEqual, source, failure);
+ 
++#if defined(JS_NUNBOX32) && (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
++    // |source| is the address of a Value; the int32 is its payload word.
++    convertInt32ToDouble(ToPayload(source), dest);
++#else
+     convertInt32ToDouble(source, dest);
++#endif
+     jump(&done);
+ 
+     bind(&isDouble);
+diff --git a/js/src/vm/NativeObject.h b/js/src/vm/NativeObject.h
+index 49c05fed35..84159e0b10 100644
+--- a/js/src/vm/NativeObject.h
++++ b/js/src/vm/NativeObject.h
+@@ -1486,7 +1486,11 @@ class NativeObject : public JSObject {
+     MOZ_ASSERT(slot < JSCLASS_RESERVED_SLOTS(getClass()));
+     MOZ_ASSERT(slotIsFixed(slot));
+     MOZ_ASSERT(getReservedSlot(slot).isDouble());
+-    void* addr = &getFixedSlotRef(slot);
++    uint8_t* addr = reinterpret_cast<uint8_t*>(&getFixedSlotRef(slot));
++#if (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
++    // The private pointer is the low bits of the Value's 64-bit word.
++    addr += sizeof(JS::Value) - sizeof(T*);
++#endif
+     return reinterpret_cast<T**>(addr);
+   }
+ 

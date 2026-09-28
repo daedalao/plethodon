@@ -1,0 +1,224 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 18:51:17 -0700
+Subject: [PATCH 13/19] NUNBOX32 big-endian: payload address for raw
+ pointer/int32 loads of Value slots (ValuePayloadAddress); 64-bit atomics via
+ libatomic on ppc32
+
+---
+ js/src/jit/BaselineCacheIRCompiler.cpp        |  3 ++-
+ js/src/jit/CacheIRCompiler.cpp                | 19 ++++++++++++++-----
+ js/src/jit/CodeGenerator.cpp                  | 16 +++++++++++-----
+ js/src/jit/MacroAssembler.cpp                 |  5 +++--
+ js/src/jit/ProcessExecutableMemory.cpp        |  6 ++++++
+ js/src/jit/shared/Assembler-shared.h          | 12 ++++++++++++
+ .../AtomicOperations-feeling-lucky-gcc.h      |  6 ++++++
+ 7 files changed, 54 insertions(+), 13 deletions(-)
+
+diff --git a/js/src/jit/BaselineCacheIRCompiler.cpp b/js/src/jit/BaselineCacheIRCompiler.cpp
+index 09705c61f8..5d6de015e5 100644
+--- a/js/src/jit/BaselineCacheIRCompiler.cpp
++++ b/js/src/jit/BaselineCacheIRCompiler.cpp
+@@ -3006,7 +3006,8 @@ bool BaselineCacheIRCompiler::emitCallNativeShared(
+       } else {
+         // This depends on the native function pointer being stored unchanged as
+         // a PrivateValue.
+-        masm.callWithABI(Address(calleeReg, JSFunction::offsetOfNativeOrEnv()));
++        masm.callWithABI(ValuePayloadAddress(
++            Address(calleeReg, JSFunction::offsetOfNativeOrEnv())));
+       }
+ #endif
+     } break;
+diff --git a/js/src/jit/CacheIRCompiler.cpp b/js/src/jit/CacheIRCompiler.cpp
+index 480f53107e..e00a4ceed9 100644
+--- a/js/src/jit/CacheIRCompiler.cpp
++++ b/js/src/jit/CacheIRCompiler.cpp
+@@ -4612,7 +4612,8 @@ bool CacheIRCompiler::emitGuardBoundFunctionIsConstructor(ObjOperandId objId) {
+     return false;
+   }
+ 
+-  Address flagsSlot(obj, BoundFunctionObject::offsetOfFlagsSlot());
++  Address flagsSlot = ValuePayloadAddress(
++      Address(obj, BoundFunctionObject::offsetOfFlagsSlot()));
+   masm.branchTest32(Assembler::Zero, flagsSlot,
+                     Imm32(BoundFunctionObject::IsConstructorFlag),
+                     failure->label());
+@@ -7724,7 +7725,9 @@ bool CacheIRCompiler::emitStoreTypedArrayElement(ObjOperandId objId,
+                             handleOOB ? &done : failure->label());
+ 
+   // Load the elements vector.
+-  masm.loadPtr(Address(obj, ArrayBufferViewObject::dataOffset()), scratch1);
++  masm.loadPtr(
++      ValuePayloadAddress(Address(obj, ArrayBufferViewObject::dataOffset())),
++      scratch1);
+ 
+   BaseIndex dest(scratch1, index, ScaleFromScalarType(elementType));
+ 
+@@ -7857,7 +7860,9 @@ bool CacheIRCompiler::emitLoadTypedArrayElementResult(
+   }
+ 
+   // Load the elements vector.
+-  masm.loadPtr(Address(obj, ArrayBufferViewObject::dataOffset()), scratch1);
++  masm.loadPtr(
++      ValuePayloadAddress(Address(obj, ArrayBufferViewObject::dataOffset())),
++      scratch1);
+ 
+   // Load the value.
+   BaseIndex source(scratch1, index, ScaleFromScalarType(elementType));
+@@ -11049,7 +11054,9 @@ bool CacheIRCompiler::emitAtomicsLoadResult(ObjOperandId objId,
+   }
+ 
+   // Load the elements vector.
+-  masm.loadPtr(Address(obj, ArrayBufferViewObject::dataOffset()), scratch);
++  masm.loadPtr(
++      ValuePayloadAddress(Address(obj, ArrayBufferViewObject::dataOffset())),
++      scratch);
+ 
+   // Load the value.
+   BaseIndex source(scratch, index, ScaleFromScalarType(elementType));
+@@ -11106,7 +11113,9 @@ bool CacheIRCompiler::emitAtomicsStoreResult(ObjOperandId objId,
+ 
+   if (!Scalar::isBigIntType(elementType)) {
+     // Load the elements vector.
+-    masm.loadPtr(Address(obj, ArrayBufferViewObject::dataOffset()), scratch);
++    masm.loadPtr(
++      ValuePayloadAddress(Address(obj, ArrayBufferViewObject::dataOffset())),
++      scratch);
+ 
+     // Store the value.
+     BaseIndex dest(scratch, index, ScaleFromScalarType(elementType));
+diff --git a/js/src/jit/CodeGenerator.cpp b/js/src/jit/CodeGenerator.cpp
+index 81682117dd..dc68ed3691 100644
+--- a/js/src/jit/CodeGenerator.cpp
++++ b/js/src/jit/CodeGenerator.cpp
+@@ -5789,7 +5789,8 @@ void CodeGenerator::visitGuardFunctionKind(LGuardFunctionKind* lir) {
+ void CodeGenerator::visitGuardFunctionScript(LGuardFunctionScript* lir) {
+   Register function = ToRegister(lir->function());
+ 
+-  Address scriptAddr(function, JSFunction::offsetOfJitInfoOrScript());
++  Address scriptAddr = ValuePayloadAddress(
++      Address(function, JSFunction::offsetOfJitInfoOrScript()));
+   bailoutCmpPtr(Assembler::NotEqual, scriptAddr,
+                 ImmGCPtr(lir->mir()->expected()), lir->snapshot());
+ }
+@@ -7072,7 +7073,8 @@ void JitRuntime::generateIonGenericCallFunCall(MacroAssembler& masm,
+ 
+   Label notFunCall;
+   masm.branchPtr(Assembler::NotEqual,
+-                 Address(calleeReg, JSFunction::offsetOfNativeOrEnv()),
++                 ValuePayloadAddress(
++                     Address(calleeReg, JSFunction::offsetOfNativeOrEnv())),
+                  ImmPtr(js::fun_call), &notFunCall);
+ 
+   // In general, we can implement fun_call by replacing calleeReg with
+@@ -7133,7 +7135,8 @@ void JitRuntime::generateIonGenericCallBoundFunction(MacroAssembler& masm,
+                           vmCall);
+ 
+   Address targetSlot(calleeReg, BoundFunctionObject::offsetOfTargetSlot());
+-  Address flagsSlot(calleeReg, BoundFunctionObject::offsetOfFlagsSlot());
++  Address flagsSlot = ValuePayloadAddress(
++      Address(calleeReg, BoundFunctionObject::offsetOfFlagsSlot()));
+   Address thisSlot(calleeReg, BoundFunctionObject::offsetOfBoundThisSlot());
+   Address firstInlineArgSlot(
+       calleeReg, BoundFunctionObject::offsetOfFirstInlineBoundArg());
+@@ -10070,7 +10073,8 @@ void CodeGenerator::visitGuardBoundFunctionIsConstructor(
+   Register obj = ToRegister(lir->object());
+ 
+   Label bail;
+-  Address flagsSlot(obj, BoundFunctionObject::offsetOfFlagsSlot());
++  Address flagsSlot = ValuePayloadAddress(
++      Address(obj, BoundFunctionObject::offsetOfFlagsSlot()));
+   masm.branchTest32(Assembler::Zero, flagsSlot,
+                     Imm32(BoundFunctionObject::IsConstructorFlag), &bail);
+   bailoutFrom(&bail, lir->snapshot());
+@@ -11424,7 +11428,9 @@ void CodeGenerator::visitArrayBufferViewElements(
+     LArrayBufferViewElements* lir) {
+   Register obj = ToRegister(lir->object());
+   Register out = ToRegister(lir->output());
+-  masm.loadPtr(Address(obj, ArrayBufferViewObject::dataOffset()), out);
++  masm.loadPtr(
++      ValuePayloadAddress(Address(obj, ArrayBufferViewObject::dataOffset())),
++      out);
+ }
+ 
+ void CodeGenerator::visitTypedArrayElementSize(LTypedArrayElementSize* lir) {
+diff --git a/js/src/jit/MacroAssembler.cpp b/js/src/jit/MacroAssembler.cpp
+index a6d970447c..b285e73a38 100644
+--- a/js/src/jit/MacroAssembler.cpp
++++ b/js/src/jit/MacroAssembler.cpp
+@@ -2799,7 +2799,7 @@ void MacroAssembler::setIsCrossRealmArrayConstructor(Register obj,
+ 
+   // The function must be the ArrayConstructor native.
+   branchPtr(Assembler::NotEqual,
+-            Address(obj, JSFunction::offsetOfNativeOrEnv()),
++            ValuePayloadAddress(Address(obj, JSFunction::offsetOfNativeOrEnv())),
+             ImmPtr(js::ArrayConstructor), &isFalse);
+ 
+   move32(Imm32(1), output);
+@@ -2828,7 +2828,8 @@ void MacroAssembler::setIsDefinitelyTypedArrayConstructor(Register obj,
+   branchTestObjIsFunction(Assembler::NotEqual, obj, output, obj, &isFalse);
+ 
+   // Load the native into |output|.
+-  loadPtr(Address(obj, JSFunction::offsetOfNativeOrEnv()), output);
++  loadPtr(ValuePayloadAddress(Address(obj, JSFunction::offsetOfNativeOrEnv())),
++          output);
+ 
+   auto branchIsTypedArrayCtor = [&](Scalar::Type type) {
+     // The function must be a TypedArrayConstructor native (from any realm).
+diff --git a/js/src/jit/ProcessExecutableMemory.cpp b/js/src/jit/ProcessExecutableMemory.cpp
+index cea7d764ca..7a5e23f6d7 100644
+--- a/js/src/jit/ProcessExecutableMemory.cpp
++++ b/js/src/jit/ProcessExecutableMemory.cpp
+@@ -505,6 +505,12 @@ static void* ReserveProcessExecutableMemory(size_t bytes) {
+   // Note that randomAddr is just a hint: if the address is not available
+   // mmap will pick a different address.
+   void* randomAddr = ComputeRandomAllocationAddress();
++#  ifdef DEBUG
++  // Reproducible JIT code addresses for debugging (with ASLR disabled).
++  if (getenv("JS_JIT_FIXED_CODE_ADDRESS")) {
++    randomAddr = nullptr;
++  }
++#  endif
+   unsigned protection = PROT_NONE;
+   unsigned flags = MAP_NORESERVE | MAP_PRIVATE | MAP_ANON;
+ #  if defined(XP_DARWIN)
+diff --git a/js/src/jit/shared/Assembler-shared.h b/js/src/jit/shared/Assembler-shared.h
+index fef8fdf804..a0ca8b6f86 100644
+--- a/js/src/jit/shared/Assembler-shared.h
++++ b/js/src/jit/shared/Assembler-shared.h
+@@ -319,6 +319,18 @@ struct Address {
+ 
+ #if JS_BITS_PER_WORD == 32
+ 
++// The address of the word holding the payload of a Value slot: a raw
++// pointer or int32 stored as a PrivateValue/Int32Value. On NUNBOX32 the
++// payload is at NUNBOX32_PAYLOAD_OFFSET (4 on big-endian), on PUNBOX64 the
++// private pointer is the whole word.
++static inline Address ValuePayloadAddress(const Address& address) {
++#ifdef JS_NUNBOX32
++  return Address(address.base, address.offset + NUNBOX32_PAYLOAD_OFFSET);
++#else
++  return address;
++#endif
++}
++
+ static inline Address LowWord(const Address& address) {
+   using mozilla::CheckedInt;
+ 
+diff --git a/js/src/jit/shared/AtomicOperations-feeling-lucky-gcc.h b/js/src/jit/shared/AtomicOperations-feeling-lucky-gcc.h
+index d886cba2c7..cc242e52c8 100644
+--- a/js/src/jit/shared/AtomicOperations-feeling-lucky-gcc.h
++++ b/js/src/jit/shared/AtomicOperations-feeling-lucky-gcc.h
+@@ -59,6 +59,12 @@
+ #  define HAS_64BIT_ATOMICS
+ #endif
+ 
++// 32-bit PowerPC has no 64-bit atomic instructions; the __atomic builtins go
++// through libatomic (not lock-free, but correct within the process).
++#if defined(__powerpc__) && !defined(__powerpc64__)
++#  define HAS_64BIT_ATOMICS
++#endif
++
+ #if defined(__ppc64__) || defined(__PPC64__) || defined(__ppc64le__) || \
+     defined(__PPC64LE__)
+ #  define HAS_64BIT_ATOMICS

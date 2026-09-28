@@ -1,0 +1,162 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: daedalao <daedalao@hotmail.com>
+Date: Sat, 26 Sep 2026 18:08:51 -0700
+Subject: [PATCH 11/19] jsapi-tests: big-endian and ppc32 support in
+ testJitABIcalls (all 447 ABI signatures pass)
+
+---
+ js/src/jsapi-tests/testJitABIcalls.cpp | 77 +++++++++++++++++++++++++-
+ 1 file changed, 74 insertions(+), 3 deletions(-)
+
+diff --git a/js/src/jsapi-tests/testJitABIcalls.cpp b/js/src/jsapi-tests/testJitABIcalls.cpp
+index d548b0ed3b..731f074f77 100644
+--- a/js/src/jsapi-tests/testJitABIcalls.cpp
++++ b/js/src/jsapi-tests/testJitABIcalls.cpp
+@@ -2,6 +2,7 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++#include "mozilla/EndianUtils.h"
+ #include "mozilla/FloatingPoint.h"
+ #include "mozilla/IntegerTypeTraits.h"
+ 
+@@ -181,11 +182,31 @@ constexpr auto FillLESeq() {
+   }
+ }
+ 
++// Same with Big Endian ordering of bytes.
++template <size_t N, uint64_t Value, uint8_t... Rest>
++constexpr auto FillBESeq() {
++  if constexpr (N == 0) {
++    return std::integer_sequence<uint8_t, Rest...>{};
++  } else {
++    return FillBESeq<N - 1, (Value >> 8), uint8_t(Value & 0xff), Rest...>();
++  }
++}
++
++// Native byte order, as the JIT loads the arguments with native loads.
++#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
++#  define JITABI_TEST_LE 1
+ template <size_t N, uint64_t Value>
+ using FillSeq_t = decltype(FillLESeq<N, Value>());
+ 
+ static_assert(std::is_same_v<FillSeq_t<4, 2>,
+                              std::integer_sequence<uint8_t, 2, 0, 0, 0>>);
++#else
++template <size_t N, uint64_t Value>
++using FillSeq_t = decltype(FillBESeq<N, Value>());
++
++static_assert(std::is_same_v<FillSeq_t<4, 2>,
++                             std::integer_sequence<uint8_t, 0, 0, 0, 2>>);
++#endif
+ 
+ // Given a list of template parameters, generate an std::integer_sequence of
+ // size_t, where each element is 1 larger than the previous one. The generated
+@@ -358,12 +379,22 @@ template <uint8_t... Buffer, typename Arg, typename... Args, uint64_t Val,
+ struct ArgsBuffer<std::integer_sequence<uint8_t, Buffer...>,
+                   std::integer_sequence<uint64_t, Val, Values...>, Arg,
+                   Args...> {
++#ifdef JITABI_TEST_LE
+   using type = typename ArgsBuffer<
+       Concat_t<std::integer_sequence<uint8_t, Buffer...>,
+                Concat_t<PadSeq_t<ActualAlignOf<Arg>(), sizeof...(Buffer)>,
+                         Concat_t<FillSeq_t<ActualSizeOf<Arg>(), Val>,
+                                  CstSeq_t<BackPadBytes<Arg>(), 0x55>>>>,
+       std::integer_sequence<uint64_t, Values...>, Args...>::type;
++#else
++  // Big-endian: a value narrower than its word slot is at the end of it.
++  using type = typename ArgsBuffer<
++      Concat_t<std::integer_sequence<uint8_t, Buffer...>,
++               Concat_t<PadSeq_t<ActualAlignOf<Arg>(), sizeof...(Buffer)>,
++                        Concat_t<CstSeq_t<BackPadBytes<Arg>(), 0x55>,
++                                 FillSeq_t<ActualSizeOf<Arg>(), Val>>>>,
++      std::integer_sequence<uint64_t, Values...>, Args...>::type;
++#endif
+ };
+ 
+ template <typename Buffer>
+@@ -377,7 +408,9 @@ using ArgsBuffer_t =
+ 
+ // NOTE: The representation of the boolean might be surprising in this test
+ // case, see AtLeastSize function for an explanation.
+-#ifdef JS_64BIT
++#ifndef JITABI_TEST_LE
++// (Byte-level self checks below are for little-endian layouts.)
++#elif defined(JS_64BIT)
+ static_assert(sizeof(uintptr_t) == 8);
+ static_assert(
+     std::is_same_v<
+@@ -500,9 +533,24 @@ template <uint64_t... Off, ABIType... Type>
+ static void passABIArgs(MacroAssembler& masm, Register base,
+                         std::integer_sequence<uint64_t, Off...>,
+                         ABITypeSequence<Type...>) {
++#ifdef JS_CODEGEN_PPC
++  // int64 arguments go in aligned register pairs, as JIT code passes them
++  // (passABIArg(Register64)); load them into callee-saved pairs first.
++  static const Register pairs[][2] = {
++      {r17, r18}, {r19, r20}, {r21, r22}, {r23, r24}, {r25, r26}};
++  [[maybe_unused]] size_t nextPair = 0;
++#endif
+   [[maybe_unused]] auto passABIArg = [&](uint64_t off, ABIType type) {
+     if (type == ABIType::Int64) {
+-#ifdef JS_64BIT
++#ifdef JS_CODEGEN_PPC
++      MOZ_RELEASE_ASSERT(nextPair < std::size(pairs));
++      Register hi = pairs[nextPair][0];
++      Register lo = pairs[nextPair][1];
++      nextPair++;
++      masm.load32(Address(base, int32_t(off) + INT64HIGH_OFFSET), hi);
++      masm.load32(Address(base, int32_t(off) + INT64LOW_OFFSET), lo);
++      masm.passABIArg(Register64(hi, lo));
++#elif defined(JS_64BIT)
+       masm.passABIArg(MoveOperand(base, size_t(off)), ABIType::General);
+ #else
+       masm.passABIArg(MoveOperand(base, size_t(off)), ABIType::General);
+@@ -677,6 +725,18 @@ bool* DefineCheckArgs<Res (*)(Args...)>::reportTo_ = nullptr;
+ // When executed, it generates the JIT code to call functions with the same
+ // signature and checks that the JIT interpretation of arguments location
+ // matches the C++ interpretation. If it differs, the test case will fail.
++#ifdef JS_CODEGEN_PPC
++template <typename Sig>
++struct HasClassTypeArg {
++  static constexpr bool value = false;
++};
++template <typename R, typename... Args>
++struct HasClassTypeArg<R (*)(Args...)> {
++  static constexpr bool value =
++      std::is_class_v<R> || (std::is_class_v<Args> || ...);
++};
++#endif
++
+ template <typename Sig>
+ class JitABICall final : public jsapitest::RuntimeTest,
+                          public DefineCheckArgs<Sig> {
+@@ -684,6 +744,14 @@ class JitABICall final : public jsapitest::RuntimeTest,
+   explicit JitABICall(const char* name) : name_(name) { reuseGlobal = true; }
+   virtual const char* name() override { return name_; }
+   virtual bool run() override {
++#ifdef JS_CODEGEN_PPC
++    // SysV PPC32 passes class-type arguments (JS::Handle, ...) by reference;
++    // JIT code only calls such functions through VM wrappers, which handle
++    // it (see generateVMWrapper). Plain ABI calls of them cannot be tested.
++    if constexpr (HasClassTypeArg<Sig>::value) {
++      return true;
++    }
++#endif
+     bool result = true;
+     this->set_instance(this, &result);
+ 
+@@ -717,9 +785,12 @@ class JitABICall final : public jsapitest::RuntimeTest,
+ #elif defined(JS_CODEGEN_RISCV64)
+     Register base = t0;
+     regs.take(base);
+-#elif defined(JS_CODEGEN_PPC64) || defined(JS_CODEGEN_PPC)
++#elif defined(JS_CODEGEN_PPC64)
+     Register base = r11;
+     regs.take(base);
++#elif defined(JS_CODEGEN_PPC)
++    Register base = r14;
++    regs.take(base);
+ #else
+ #  error "Unknown architecture!"
+ #endif

@@ -1,0 +1,399 @@
+<title>SiskiyouPlethodon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rokkitt:wght@500;700;800&family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ember: #D9531F;
+    --char: #1B1714;
+    --umber: #2A1C16;
+    --brass: #E8C77A;
+    --kalmiopsis: #B0356E;
+    --ash: #E9EBE6;
+
+    --ground: #E9EBE6;
+    --surface: #F6F7F4;
+    --ink: #1B1714;
+    --ink-soft: #4E4944;
+    --rule: #CDD0C8;
+    --accent: #B0356E;
+    --tile: #FFFFFF;
+    --code-bg: #DFE2DA;
+
+    --display: "Rokkitt", "Rockwell", "Roboto Slab", Georgia, serif;
+    --body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #15120F;
+      --surface: #1E1A16;
+      --ink: #ECE8E1;
+      --ink-soft: #B3ACA3;
+      --rule: #38322C;
+      --accent: #E8C77A;
+      --tile: #241F1A;
+      --code-bg: #2B2520;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #15120F;
+    --surface: #1E1A16;
+    --ink: #ECE8E1;
+    --ink-soft: #B3ACA3;
+    --rule: #38322C;
+    --accent: #E8C77A;
+    --tile: #241F1A;
+    --code-bg: #2B2520;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font: 16px/1.6 var(--body);
+    padding-inline: 20px;
+    padding-block: 0 72px;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  code, .mono { font-family: var(--mono); font-size: 0.86em; }
+  code { background: var(--code-bg); padding: 0.08em 0.36em; border-radius: 3px; overflow-wrap: anywhere; }
+
+  h1, h2, h3 { font-family: var(--display); line-height: 1.05; text-wrap: balance; margin: 0; }
+  h2 { font-size: clamp(1.9rem, 4vw, 2.5rem); font-weight: 700; letter-spacing: 0.005em; }
+  h3 { font-size: 1.35rem; font-weight: 700; }
+  p { margin: 0; max-width: 66ch; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-soft);
+  }
+
+  /* masthead */
+  header.mast {
+    display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center;
+    padding-block: 56px 40px; border-bottom: 2px solid var(--ink);
+  }
+  header.mast svg { width: 132px; height: 132px; display: block; }
+  .mast h1 { font-size: clamp(2.4rem, 7.4vw, 5rem); font-weight: 800; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+  .light { font-weight: 500; }
+  .mast .sub { margin-top: 12px; color: var(--ink-soft); font-size: 1.05rem; }
+  @media (max-width: 560px) {
+    header.mast { grid-template-columns: 1fr; gap: 18px; padding-block: 36px 28px; }
+    header.mast svg { width: 96px; height: 96px; }
+  }
+
+  section { padding-block: 48px 8px; display: grid; gap: 22px; }
+  section > header { display: grid; gap: 6px; }
+
+  /* the name */
+  .origin { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .origin article { background: var(--surface); border: 1px solid var(--rule); padding: 22px 22px 20px; display: grid; gap: 10px; align-content: start; }
+  .origin dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 4px 0 0; font-size: 0.92rem; }
+  .origin dt { color: var(--ink-soft); }
+  .origin dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .thesis { font-size: 1.12rem; max-width: 70ch; }
+  @media (max-width: 720px) { .origin { grid-template-columns: 1fr; } }
+
+  /* marks */
+  .marks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .mark-tile { border: 1px solid var(--rule); background: var(--tile); padding: 22px; display: grid; gap: 14px; justify-items: center; align-content: start; }
+  .mark-tile.dark { background: #1B1714; color: #ECE8E1; border-color: #1B1714; }
+  .mark-tile svg { width: 150px; height: 150px; }
+  .mark-tile figcaption { font-size: 0.85rem; color: inherit; opacity: 0.8; text-align: center; }
+  .mark-tile.dark figcaption { opacity: 0.75; }
+  @media (max-width: 760px) { .marks { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 460px) { .marks { grid-template-columns: 1fr; } }
+
+  .sizes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 22px; background: var(--surface); border: 1px solid var(--rule); padding: 20px 22px; }
+  .sizes figure { margin: 0; display: grid; gap: 6px; justify-items: center; }
+  .sizes figcaption { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-soft); }
+
+  .lockups { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+  .lockup { border: 1px solid var(--rule); background: var(--tile); padding: 26px; display: flex; align-items: center; gap: 18px; }
+  .lockup svg { width: 76px; height: 76px; flex: none; }
+  .lockup .word { font-family: var(--display); font-weight: 800; font-size: clamp(1.7rem, 4vw, 2.4rem); line-height: 0.95; }
+  .lockup.stack { flex-direction: column; text-align: center; }
+  .lockup.stack .word { font-size: 1.9rem; }
+  .lockup .word { overflow-wrap: anywhere; }
+  @media (max-width: 700px) { .lockups { grid-template-columns: 1fr; } }
+
+  .rules { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .rules ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; }
+  .rules h3 { margin-bottom: 8px; }
+  @media (max-width: 720px) { .rules { grid-template-columns: 1fr; } }
+
+  /* palette */
+  .palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .swatch { display: grid; grid-template-rows: 92px auto; border: 1px solid var(--rule); background: var(--tile); }
+  .swatch .chip { border-bottom: 1px solid var(--rule); }
+  .swatch div.meta { padding: 10px 12px 12px; display: grid; gap: 2px; }
+  .swatch strong { font-family: var(--display); font-size: 1.1rem; font-weight: 700; }
+  .swatch span { font-size: 0.8rem; color: var(--ink-soft); }
+  @media (max-width: 860px) { .palette { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 460px) { .palette { grid-template-columns: repeat(2, 1fr); } }
+
+  /* tables */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--rule); background: var(--tile); }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.93rem; }
+  th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--rule); }
+  thead th { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); font-weight: 500; background: var(--surface); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  td.note { color: var(--ink-soft); }
+  .codenames td:first-child { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .codenames td.year { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+
+  .files { background: var(--surface); border: 1px solid var(--rule); padding: 18px 20px; }
+  .files ul { margin: 8px 0 0; padding-left: 1.1em; display: grid; gap: 4px; }
+
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--rule); color: var(--ink-soft); font-size: 0.85rem; display: grid; gap: 6px; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <clipPath id="bs-disc"><circle cx="64" cy="64" r="62"/></clipPath>
+    <symbol id="bs-mark" viewBox="0 0 128 128">
+      <circle cx="64" cy="64" r="62" fill="#D9531F"/>
+      <g clip-path="url(#bs-disc)">
+        <path d="M0 78 C 30 70, 60 84, 128 72 L128 128 L0 128 Z" fill="#EE7A33"/>
+        <path d="M58 128 L66 108 L80 102 L90 110 L100 98 L116 100 L128 92 L128 128 Z" fill="#1B1714"/>
+        <path d="M84 128 L92 118 L106 116 L112 124 L118 116 L128 118 L128 128 Z" fill="#2E2823"/>
+      </g>
+      <g fill="none" stroke="#2A1C16" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M76 45 L66 39 L62 41" stroke-width="4.5"/>
+        <path d="M79 49 L88 53 L91 51" stroke-width="4.5"/>
+        <path d="M63 68 L54 63 L51 65" stroke-width="4.5"/>
+        <path d="M65 72 L71 80 L70 84" stroke-width="4.5"/>
+        <path d="M81 37 C 77 46, 75 54, 70 61 S 63 69, 61 72" stroke-width="12"/>
+        <path d="M61 72 C 53 79, 46 86, 45 95" stroke-width="8.5"/>
+        <path d="M45 95 C 44 102, 48 107, 55 108" stroke-width="5.5"/>
+        <path d="M55 108 C 59 108, 62 106, 63 103" stroke-width="3"/>
+      </g>
+      <ellipse cx="84" cy="30" rx="8.5" ry="7" transform="rotate(-58 84 30)" fill="#2A1C16"/>
+      <g fill="#E8C77A">
+        <circle cx="81.2" cy="25.8" r="1.5"/><circle cx="88.6" cy="29.6" r="1.5"/>
+        <circle cx="78.6" cy="41" r="1.3"/><circle cx="75.4" cy="49.5" r="1.1"/>
+        <circle cx="72.2" cy="56.5" r="1.3"/><circle cx="66.6" cy="64.2" r="1.1"/>
+        <circle cx="57.4" cy="76.6" r="1.1"/><circle cx="50.6" cy="84.8" r="1.0"/>
+        <circle cx="46.8" cy="93.6" r="0.9"/>
+      </g>
+    </symbol>
+    <symbol id="bs-small" viewBox="0 0 128 128">
+      <circle cx="64" cy="64" r="62" fill="#D9531F"/>
+      <g fill="none" stroke="#2A1C16" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M77 44 L64 37" stroke-width="8"/><path d="M79 50 L91 55" stroke-width="8"/>
+        <path d="M63 67 L51 61" stroke-width="8"/><path d="M65 72 L71 84" stroke-width="8"/>
+        <path d="M82 34 C 77 46, 75 54, 70 61 S 63 69, 61 72" stroke-width="19"/>
+        <path d="M61 72 C 52 80, 44 88, 44 98" stroke-width="13"/>
+        <path d="M44 98 C 44 106, 50 110, 58 108" stroke-width="8"/>
+      </g>
+      <ellipse cx="85" cy="28" rx="12" ry="10" transform="rotate(-58 85 28)" fill="#2A1C16"/>
+    </symbol>
+    <symbol id="bs-symbolic" viewBox="0 0 128 128">
+      <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M77 44 L64 37" stroke-width="9"/><path d="M79 50 L91 55" stroke-width="9"/>
+        <path d="M63 67 L51 61" stroke-width="9"/><path d="M65 72 L71 84" stroke-width="9"/>
+        <path d="M82 34 C 77 46, 75 54, 70 61 S 63 69, 61 72" stroke-width="20"/>
+        <path d="M61 72 C 52 80, 44 88, 44 98" stroke-width="14"/>
+        <path d="M44 98 C 44 106, 50 110, 58 108" stroke-width="9"/>
+      </g>
+      <ellipse cx="85" cy="28" rx="13" ry="11" transform="rotate(-58 85 28)" fill="currentColor"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+<header class="mast">
+  <svg role="img" aria-label="SiskiyouPlethodon mark"><use href="#bs-mark"/></svg>
+  <div>
+    <div class="eyebrow">Brand &amp; naming convention · v1 · Sept 2026</div>
+    <h1><span class="light">Siskiyou</span>Plethodon</h1>
+    <p class="sub">An independent build of the Gecko browser engine for PowerPC — 32-bit G4 and 64-bit big-endian first. Built from Mozilla Firefox source code; not affiliated with or endorsed by Mozilla.</p>
+  </div>
+</header>
+
+<section id="name">
+  <header>
+    <div class="eyebrow">The name</div>
+    <h2>The salamander of the forest the Biscuit Fire burned</h2>
+  </header>
+  <div class="origin">
+    <article>
+      <h3>The Biscuit Fire</h3>
+      <p>Lightning started five fires in the Kalmiopsis Wilderness of the Siskiyou National Forest; they grew into one and burned into October.</p>
+      <dl>
+        <dt>Ignition</dt><dd>13 July 2002, lightning</dd>
+        <dt>Area</dt><dd>499,965 acres</dd>
+        <dt>Where</dt><dd>Siskiyou Mountains, SW Oregon &amp; N California</dd>
+        <dt>Record</dt><dd>Oregon's largest recorded forest fire</dd>
+      </dl>
+    </article>
+    <article>
+      <h3>The Siskiyou Mountains salamander</h3>
+      <p><i>Plethodon stormi</i> — a small, lungless salamander, dark brown with brassy flecks, breathing through damp skin under mossy talus.</p>
+      <dl>
+        <dt>Range</dt><dd>Siskiyou Mountains only (Applegate drainage, Seiad Valley)</dd>
+        <dt>Habitat</dt><dd>Talus slopes under mature forest canopy</dd>
+        <dt>Status</dt><dd>Endemic; Oregon conservation strategy species</dd>
+      </dl>
+    </article>
+  </div>
+  <p class="thesis"><i>Plethodon</i> is the salamander's genus; the Siskiyou Mountains salamander is <i>Plethodon stormi</i>. The salamander is the creature old stories say lives in fire, and this one lives in the forest the Biscuit burned. The browser is the same idea: the Gecko engine carried onto hardware the upstream project no longer builds for, and doing fine there.</p>
+</section>
+
+<section id="mark">
+  <header>
+    <div class="eyebrow">Logo</div>
+    <h2>The mark</h2>
+  </header>
+  <div class="marks">
+    <figure class="mark-tile">
+      <svg role="img" aria-label="Primary mark"><use href="#bs-mark"/></svg>
+      <figcaption>Primary mark · 32 px and up</figcaption>
+    </figure>
+    <figure class="mark-tile dark">
+      <svg role="img" aria-label="Primary mark on dark"><use href="#bs-mark"/></svg>
+      <figcaption>On dark grounds: unchanged</figcaption>
+    </figure>
+    <figure class="mark-tile">
+      <svg role="img" aria-label="Symbolic mark" style="color: var(--ink)"><use href="#bs-symbolic"/></svg>
+      <figcaption>Symbolic · one colour, panels &amp; tray</figcaption>
+    </figure>
+  </div>
+  <div class="sizes" aria-label="Icon sizes">
+    <figure><svg width="16" height="16"><use href="#bs-small"/></svg><figcaption>16</figcaption></figure>
+    <figure><svg width="22" height="22"><use href="#bs-small"/></svg><figcaption>22</figcaption></figure>
+    <figure><svg width="24" height="24"><use href="#bs-small"/></svg><figcaption>24</figcaption></figure>
+    <figure><svg width="32" height="32"><use href="#bs-mark"/></svg><figcaption>32</figcaption></figure>
+    <figure><svg width="48" height="48"><use href="#bs-mark"/></svg><figcaption>48</figcaption></figure>
+    <figure><svg width="64" height="64"><use href="#bs-mark"/></svg><figcaption>64</figcaption></figure>
+    <figure><svg width="128" height="128"><use href="#bs-mark"/></svg><figcaption>128</figcaption></figure>
+  </div>
+  <p>16–24 px use the simplified mark (heavier body, no flecks, talus or ridge glow); 32 px and up use the primary mark.</p>
+  <div class="lockups">
+    <div class="lockup">
+      <svg role="img" aria-label="Mark"><use href="#bs-mark"/></svg>
+      <div class="word"><span class="light">Siskiyou</span>Plethodon</div>
+    </div>
+    <div class="lockup stack">
+      <svg role="img" aria-label="Mark"><use href="#bs-mark"/></svg>
+      <div class="word">Plethodon</div>
+    </div>
+  </div>
+  <div class="rules">
+    <div>
+      <h3>Do</h3>
+      <ul>
+        <li>Keep clear space of one quarter of the mark's width on every side.</li>
+        <li>Use the simplified mark below 32 px and the symbolic mark wherever a single colour is required.</li>
+        <li>Set the wordmark in Rokkitt: "Siskiyou" Medium, "Plethodon" ExtraBold, one word, no space. The short-name lockup is "Plethodon" alone.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Don't</h3>
+      <ul>
+        <li>Draw a fox, a globe, or any creature wrapped around a circle.</li>
+        <li>Use an orange-to-purple gradient anywhere.</li>
+        <li>Recolour the salamander red or orange; it's umber with brass flecks.</li>
+        <li>Put the Firefox name or logo in the product name, icons, window titles or desktop entry.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="palette">
+  <header>
+    <div class="eyebrow">Colour</div>
+    <h2>Palette</h2>
+  </header>
+  <div class="palette">
+    <div class="swatch"><div class="chip" style="background:#D9531F"></div><div class="meta"><strong>Biscuit Ember</strong><span class="mono">#D9531F</span><span>Badge, primary brand colour</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#1B1714"></div><div class="meta"><strong>Talus Char</strong><span class="mono">#1B1714</span><span>Stones, dark grounds</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#2A1C16"></div><div class="meta"><strong>Salamander Umber</strong><span class="mono">#2A1C16</span><span>The animal</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#E8C77A"></div><div class="meta"><strong>Brass Fleck</strong><span class="mono">#E8C77A</span><span>Flecks, accent on dark</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#B0356E"></div><div class="meta"><strong>Kalmiopsis</strong><span class="mono">#B0356E</span><span>Accent on light</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#E9EBE6"></div><div class="meta"><strong>Serpentine Ash</strong><span class="mono">#E9EBE6</span><span>Light grounds</span></div></div>
+  </div>
+  <p>Kalmiopsis is named for <i>Kalmiopsis leachiana</i>, the pink shrub that gave the burned wilderness its name; Serpentine for the Siskiyous' serpentine rock.</p>
+</section>
+
+<section id="naming">
+  <header>
+    <div class="eyebrow">Naming convention</div>
+    <h2>Every name the browser uses</h2>
+  </header>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Where</th><th>Name</th><th>Rule</th></tr></thead>
+      <tbody>
+        <tr><td>Full name</td><td><b>SiskiyouPlethodon</b></td><td class="note">One word, camel case, capital S and P. Never "Siskiyou Plethodon" with a space. Used where the product introduces itself: About dialog, desktop entry name, website, announcements.</td></tr>
+        <tr><td>Short name</td><td><b>Plethodon</b></td><td class="note">Everywhere Firefox itself just says "Firefox": menus, window titles, taskbar, "Quit Plethodon", "Plethodon Settings".</td></tr>
+        <tr><td>Machine name</td><td><code>plethodon</code></td><td class="note">One identifier for the pacman package, the binary (<code>/usr/bin/plethodon</code>), the install directory (<code>/usr/lib/plethodon/</code>) and <code>MOZ_APP_NAME</code>.</td></tr>
+        <tr><td>Window identity</td><td><code>plethodon</code></td><td class="note">Remoting name, Wayland <code>app_id</code> and X11 <code>WM_CLASS</code>; the desktop entry is <code>plethodon.desktop</code> so docks match windows to the launcher.</td></tr>
+        <tr><td>Profile</td><td><code>~/.plethodon/</code></td><td class="note">Separate from any Firefox profile on the same machine.</td></tr>
+        <tr><td>Branding directory</td><td><code>browser/branding/plethodon/</code></td><td class="note">Selected with <code>--with-branding=browser/branding/plethodon</code> in place of <code>--enable-official-branding</code>. Holds the icons (<code>default16.png</code>–<code>default256.png</code>) and the brand strings: brand-full-name and brand-product-name "SiskiyouPlethodon", brand-short-name "Plethodon".</td></tr>
+        <tr><td>About dialog</td><td>SiskiyouPlethodon 154.0.1 (ppc)</td><td class="note">Second line: "Built from Mozilla Firefox 154.0.1 source code for Arch POWER (powerpc). Not affiliated with or endorsed by Mozilla." That factual attribution is the only place the Firefox name appears.</td></tr>
+        <tr><td>Version</td><td><code>154.0.1</code></td><td class="note">Follows the Gecko version exactly; no separate numbering. Our rebuilds increment the package release: <code>154.0.1-4</code>.</td></tr>
+        <tr><td>Architectures</td><td>(ppc) · (ppc64) · (ppc64le)</td><td class="note">One product name for every target; the architecture appears only in the About dialog and the package filename.</td></tr>
+        <tr><td>Development channel</td><td>Plethodon Ember</td><td class="note">Test builds from the op64k tree. Package, binary, window identity and profile all become <code>plethodon-ember</code>, so it installs beside the stable build.</td></tr>
+        <tr><td>User agent</td><td>unchanged</td><td class="note">The Gecko user-agent string stays as built, including its <code>Firefox/154.0</code> compatibility token, so sites keep serving the same pages. It names the engine sites test against, not the product.</td></tr>
+        <tr><td>Git tags</td><td><code>v154.0.1-4</code></td><td class="note">Package version as tagged; the release codename goes in the tag message, not the tag.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="codenames">
+  <header>
+    <div class="eyebrow">Release codenames</div>
+    <h2>One Oregon wildfire per major version</h2>
+  </header>
+  <p>Each Gecko major version gets the name of an Oregon wildfire, taken in order of the fire's year and alphabetically within a year. Codenames appear in release notes and tag messages only, never in the browser. The Biscuit Fire belongs to the product's story, so it's not in the list.</p>
+  <div class="table-scroll">
+    <table class="codenames">
+      <thead><tr><th>Gecko</th><th>Codename</th><th>Fire</th></tr></thead>
+      <tbody>
+        <tr><td>154</td><td>Tillamook</td><td class="year">Tillamook Burn, 1933</td></tr>
+        <tr><td>155</td><td>Bandon</td><td class="year">Bandon Fire, 1936</td></tr>
+        <tr><td>156</td><td>B&amp;B Complex</td><td class="year">B&amp;B Complex Fires, 2003</td></tr>
+        <tr><td>157</td><td>Chetco Bar</td><td class="year">Chetco Bar Fire, 2017</td></tr>
+        <tr><td>158</td><td>Eagle Creek</td><td class="year">Eagle Creek Fire, 2017</td></tr>
+        <tr><td>159</td><td>Archie Creek</td><td class="year">Archie Creek Fire, 2020</td></tr>
+        <tr><td>160</td><td>Beachie Creek</td><td class="year">Beachie Creek Fire, 2020</td></tr>
+        <tr><td>161</td><td>Holiday Farm</td><td class="year">Holiday Farm Fire, 2020</td></tr>
+        <tr><td>162</td><td>Lionshead</td><td class="year">Lionshead Fire, 2020</td></tr>
+        <tr><td>163</td><td>Riverside</td><td class="year">Riverside Fire, 2020</td></tr>
+        <tr><td>164</td><td>Bootleg</td><td class="year">Bootleg Fire, 2021</td></tr>
+        <tr><td>165</td><td>Cedar Creek</td><td class="year">Cedar Creek Fire, 2022</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="files">
+  <header>
+    <div class="eyebrow">Assets</div>
+    <h2>Files</h2>
+  </header>
+  <div class="files">
+    <p>On op64k in <code>~/Projects/firefox-ppc32/branding/</code>:</p>
+    <ul>
+      <li><code>plethodon.svg</code> — primary mark, 32 px and up</li>
+      <li><code>plethodon-small.svg</code> — simplified mark, 16–24 px</li>
+      <li><code>plethodon-symbolic.svg</code> — one colour (<code>currentColor</code>)</li>
+      <li><code>png/default16.png</code> … <code>png/default512.png</code> — icon set in the names the branding directory expects</li>
+      <li><code>NAMING.md</code> — this convention as plain text</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <span>SiskiyouPlethodon is an independent build of the Gecko engine and is not affiliated with or endorsed by Mozilla. Firefox is a trademark of the Mozilla Foundation.</span>
+  <span>Biscuit Fire and salamander facts: Oregon Encyclopedia, U.S. Fish &amp; Wildlife Service, AmphibiaWeb, Klamath-Siskiyou Wildlands Center.</span>
+</footer>
+
+</div>

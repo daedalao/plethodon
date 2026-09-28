@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>SiskiyouPlethodon (16-24 px)</title>
+  <circle cx="64" cy="64" r="62" fill="#D9531F"/>
+  <g fill="none" stroke="#2A1C16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M77 44 L64 37" stroke-width="8"/>
+    <path d="M79 50 L91 55" stroke-width="8"/>
+    <path d="M63 67 L51 61" stroke-width="8"/>
+    <path d="M65 72 L71 84" stroke-width="8"/>
+    <path d="M82 34 C 77 46, 75 54, 70 61 S 63 69, 61 72" stroke-width="19"/>
+    <path d="M61 72 C 52 80, 44 88, 44 98" stroke-width="13"/>
+    <path d="M44 98 C 44 106, 50 110, 58 108" stroke-width="8"/>
+  </g>
+  <ellipse cx="85" cy="28" rx="12" ry="10" transform="rotate(-58 85 28)" fill="#2A1C16"/>
+</svg>

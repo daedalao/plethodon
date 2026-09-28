@@ -1,0 +1,10 @@
+/src/
+/pkg/
+/xroot/
+/mozbuild/
+*.pkg.tar.zst
+*.source.tar.xz
+/release/src/
+/release/pkg/
+/release/*.tar.xz
+*.log
